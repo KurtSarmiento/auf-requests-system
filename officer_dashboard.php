@@ -62,7 +62,7 @@ start_page("Officer Dashboard", $role, $full_name);
 </p>
 
 <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-    <a href="request_form.php" class="bg-blue-600 hover:bg-blue-700 text-white p-6 rounded-xl shadow-lg transition duration-300 transform hover:scale-[1.02]">
+    <a href="request_create.php" class="bg-blue-600 hover:bg-blue-700 text-white p-6 rounded-xl shadow-lg transition duration-300 transform hover:scale-[1.02]">
         <h3 class="text-2xl font-bold mb-1">Submit New Request</h3>
         <p class="text-sm opacity-90">Start the multi-stage approval process.</p>
     </a>
@@ -85,21 +85,21 @@ start_page("Officer Dashboard", $role, $full_name);
         <p class="text-xs text-gray-500 mt-2">All-time submissions</p>
     </div>
 
-    <div class="bg-card p-6 rounded-xl shadow-xl border border-primary">
-        <p class="text-sm font-medium text-primary">Final Approved</p>
-        <p class="text-4xl font-extrabold text-green-600 mt-1"><?php echo $approved_count; ?></p>
+    <div class="bg-card p-6 rounded-xl shadow-xl border border-gray-200">
+        <p class="text-sm font-medium text-gray-500">Final Approved</p>
+        <p class="text-4xl font-extrabold text-blue-900 mt-1"><?php echo $approved_count; ?></p>
         <p class="text-xs text-gray-500 mt-2">Ready for execution</p>
     </div>
 
-    <div class="bg-card p-6 rounded-xl shadow-xl border border-yellow-400">
-        <p class="text-sm font-medium text-yellow-600">Awaiting Approval</p>
-        <p class="text-4xl font-extrabold text-yellow-700 mt-1"><?php echo $pending_count; ?></p>
+    <div class="bg-card p-6 rounded-xl shadow-xl border border-gray-200">
+        <p class="text-sm font-medium text-gray-500">Awaiting Approval</p>
+        <p class="text-4xl font-extrabold text-navyblue-900 mt-1"><?php echo $pending_count; ?></p>
         <p class="text-xs text-gray-500 mt-2">Currently in the pipeline</p>
     </div>
     
     <div class="bg-card p-6 rounded-xl shadow-xl border border-gray-200">
         <p class="text-sm font-medium text-gray-500">Other Closed Requests</p>
-        <p class="text-4xl font-extrabold text-gray-400 mt-1"><?php echo $request_count - $pending_count - $approved_count; ?></p>
+        <p class="text-4xl font-extrabold text-gray-900 mt-1"><?php echo $request_count - $pending_count - $approved_count; ?></p>
         <p class="text-xs text-gray-500 mt-2">Completed or Rejected</p>
     </div>
 
