@@ -101,11 +101,27 @@ if($_SERVER["REQUEST_METHOD"] == "POST"){
         /* Custom font and base colors for an institutional look */
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #e5e7eb; /* Light gray background */
+            background-color: #e5e7eb; /* Light gray background fallback */
         }
+        
+        /* * CSS for the Moving Gradient Background 
+         */
         .login-bg {
-            /* Example: Darker blue for background contrast */
-            background-image: linear-gradient(135deg, #1e3a8a 0%, #172554 100%);
+            background: linear-gradient(-45deg, #1e3a8a, #172554, #4f46e5, #3730a3);
+            background-size: 400% 400%; /* Make the gradient larger than the viewport */
+            animation: gradient-shift 15s ease infinite; /* 15 seconds for a smooth, slow loop */
+        }
+        
+        @keyframes gradient-shift {
+            0% {
+                background-position: 0% 50%;
+            }
+            50% {
+                background-position: 100% 50%;
+            }
+            100% {
+                background-position: 0% 50%;
+            }
         }
     </style>
 </head>
