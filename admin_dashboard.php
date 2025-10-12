@@ -113,11 +113,21 @@ if (!empty($status_column)) {
 
     if ($stmt = mysqli_prepare($link, $count_sql)) {
         
-        // Bind the notification status parameter first, then the user IDs if filtering by organization
-        $bind_params = array_merge([$stmt, "s$types", &$current_review_status], $params);
+        // --- FIX: Create an array of references for dynamic binding ---
+        // Argument 1: The prepared statement object ($stmt)
+        // Argument 2: The type string ("s" + dynamic integer types $types)
+        $bind_params = [$stmt, "s$types", &$current_review_status];
+        
+        // Add all dynamic parameters by reference
+        foreach ($params as $key => $value) {
+            // We need to use the $params array elements by reference
+            // Since $params holds simple integers (user_ids), we reference them directly.
+            $bind_params[] = &$params[$key];
+        }
         
         // This dynamic binding requires call_user_func_array
         call_user_func_array('mysqli_stmt_bind_param', $bind_params);
+        // -----------------------------------------------------------------
         
         if (mysqli_stmt_execute($stmt)) {
             mysqli_stmt_bind_result($stmt, $total_reviewable, $pending_count, $approved_count, $rejected_count, $forwarded_count);
