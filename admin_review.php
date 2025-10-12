@@ -11,6 +11,13 @@ if (!isset($_SESSION["loggedin"]) || $_SESSION["loggedin"] !== true || !in_array
 
 require_once "db_config.php";
 $user_org_id = isset($_SESSION["org_id"]) ? (int)$_SESSION["org_id"] : 0;
+// --- TEMPORARY DEBUG ---
+if ($current_role === 'Adviser') {
+    echo "<div style='background-color: #ffdddd; border: 1px solid #cc0000; padding: 10px; margin-bottom: 20px; font-weight: bold;'>";
+    echo "DEBUG: Logged in as Adviser. System is filtering by org_id: " . $user_org_id;
+    echo "</div>";
+}
+// --- END TEMPORARY DEBUG ---
 $current_role = $_SESSION["role"];
 $request = null;
 $error_message = $success_message = "";
@@ -170,9 +177,20 @@ if ($request_id > 0) {
             r.request_id = ?
     ";
 
+    $params = ["i", $request_id];
+
     // If Adviser, restrict to their organization
-    if ($current_role === 'Adviser' && $user_org_id > 0) {
-        $sql .= " AND u.org_id = " . $user_org_id;
+    if ($current_role === 'Adviser') {
+        if ($user_org_id > 0) {
+            // Apply organization ID filter and add parameter
+            $sql .= " AND u.org_id = ?";
+            $params[0] .= "i"; // Append 'i' for integer type
+            $params[] = $user_org_id; // Add the org_id parameter
+        } else {
+            // If the Adviser has no org_id, show an explicit error and stop.
+            $error_message = "Adviser account is not linked to any organization (org_id is missing or 0). Cannot view requests.";
+            $request_id = 0; 
+        }
     }
 
     if ($stmt = mysqli_prepare($link, $sql)) {
