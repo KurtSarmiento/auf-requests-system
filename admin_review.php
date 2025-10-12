@@ -173,7 +173,8 @@ if ($request_id > 0) {
 
     // If Adviser, restrict to their organization
     if ($current_role === 'Adviser') {
-        $sql .= " AND u.org_id = " . $user_org_id;
+        $safe_org_id = (int)$user_org_id; 
+        $sql .= " AND u.org_id = " . $safe_org_id;
     }
 
     if ($stmt = mysqli_prepare($link, $sql)) {
