@@ -41,8 +41,8 @@ function render_status_badge($status) {
 // SQL to select all requests submitted by the logged-in officer
 // We need all approval statuses here for the officer to track progress.
 $sql = "SELECT 
-            r.request_id, r.request_title, r.request_type, r.amount_requested, 
-            r.notification_status, r.date_submitted,
+            r.request_id, r.title, r.type, r.amount, 
+            r.date_submitted, r.final_status, r.notification_status,
             r.adviser_status, r.dean_status, r.osafa_status, r.afo_status, 
             o.org_name
         FROM requests r
