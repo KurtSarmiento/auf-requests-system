@@ -2,67 +2,64 @@
 // Initialize the session
 session_start();
  
-// Check if the user is logged in, if not then redirect to login page
-if (!isset($_SESSION["loggedin"]) || $_SESSION["loggedin"] !== true || $_SESSION["role"] !== 'Officer') {
+// Check if the user is logged in and is an Officer
+if(!isset($_SESSION["loggedin"]) || $_SESSION["loggedin"] !== true || $_SESSION["role"] !== 'Officer'){
     header("location: login.php");
     exit;
 }
-
+ 
+// Include config file and layout template
 require_once "db_config.php";
+require_once "layout_template.php"; // NEW: Include the template file
 
+// Call the start_page function to output the header and navigation
+start_page("My Submitted Funding Requests");
+
+// Prepare to fetch data
 $user_id = $_SESSION["user_id"];
-$org_id = $_SESSION["org_id"];
-$requests = [];
+$request_list = [];
 $error_message = "";
 
-// Function to determine CSS class for status pill
-function get_status_class($status) {
+// Helper function to render status badges
+function render_status_badge($status) {
+    $class = "bg-gray-200 text-gray-700"; // Default (Pending)
     switch ($status) {
         case 'Approved':
-            return 'bg-green-100 text-green-800 border-green-500';
+            $class = "bg-green-100 text-green-700 border border-green-300";
+            break;
         case 'Rejected':
-            return 'bg-red-100 text-red-800 border-red-500';
-        case 'Awaiting AFO Approval':
-            return 'bg-yellow-100 text-yellow-800 border-yellow-500';
-        case 'Budget Available':
-            return 'bg-purple-100 text-purple-800 border-purple-500 font-bold';
+            $class = "bg-red-100 text-red-700 border border-red-300";
+            break;
         case 'Pending':
         default:
-            return 'bg-blue-100 text-blue-800 border-blue-500';
+            $class = "bg-yellow-100 text-yellow-700 border border-yellow-300";
+            break;
     }
+    return '<span class="status-badge ' . $class . '">' . htmlspecialchars($status) . '</span>';
 }
 
-// Prepare the SQL query to select all requests submitted by this officer's organization
-// Note: We are now checking the user's organization ID and displaying the final_status.
-$sql = "
-    SELECT 
-        r.request_id, 
-        r.title, 
-        r.type, 
-        r.amount, 
-        r.date_submitted,
-        r.final_status,
-        r.notification_status
-    FROM 
-        requests r
-    JOIN 
-        users u ON r.user_id = u.user_id
-    WHERE 
-        u.org_id = ?
-    ORDER BY r.date_submitted DESC
-";
+// SQL to select all requests submitted by the logged-in officer
+// We need all approval statuses here for the officer to track progress.
+$sql = "SELECT 
+            r.request_id, r.request_title, r.request_type, r.amount_requested, 
+            r.notification_status, r.date_submitted,
+            r.adviser_status, r.dean_status, r.osafa_status, r.afo_status, 
+            o.org_name
+        FROM requests r
+        INNER JOIN organizations o ON r.org_id = o.org_id
+        WHERE r.user_id = ? 
+        ORDER BY r.date_submitted DESC";
 
-// Line 70 (The fix is in the SQL above, but the execution starts here)
-if ($stmt = mysqli_prepare($link, $sql)) {
-    // Bind parameters: 'i' for integer (org_id)
-    mysqli_stmt_bind_param($stmt, "i", $org_id);
+if($stmt = mysqli_prepare($link, $sql)){
+    mysqli_stmt_bind_param($stmt, "i", $user_id);
     
-    if (mysqli_stmt_execute($stmt)) {
+    if(mysqli_stmt_execute($stmt)){
         $result = mysqli_stmt_get_result($stmt);
-        if (mysqli_num_rows($result) > 0) {
-            $requests = mysqli_fetch_all($result, MYSQLI_ASSOC);
+        while ($row = mysqli_fetch_assoc($result)) {
+            $request_list[] = $row;
         }
-    } else {
+        mysqli_free_result($result);
+    } else{
         $error_message = "ERROR: Could not execute query. " . mysqli_error($link);
     }
 
@@ -71,113 +68,97 @@ if ($stmt = mysqli_prepare($link, $sql)) {
     $error_message = "ERROR: Could not prepare statement. " . mysqli_error($link);
 }
 
+// Display error if present
+if (!empty($error_message)) {
+    echo '<div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6 rounded-lg" role="alert"><p>' . htmlspecialchars($error_message) . '</p></div>';
+}
+?>
+
+<div class="bg-white shadow-xl rounded-xl overflow-hidden">
+    <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+            <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/12">ID</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-3/12">Request Title / Type</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/12">Amount</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-4/12">Approval Flow</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-2/12">Final Status</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/12">Submitted</th>
+            </tr>
+        </thead>
+        <tbody class="bg-white divide-y divide-gray-200">
+            <?php if (empty($request_list)): ?>
+                <tr>
+                    <td colspan="6" class="px-6 py-4 text-center text-gray-500">
+                        You have not submitted any funding requests yet.
+                        <a href="request_create.php" class="text-indigo-600 hover:text-indigo-800 font-medium">Submit one now.</a>
+                    </td>
+                </tr>
+            <?php else: ?>
+                <?php foreach ($request_list as $request): ?>
+                    <tr class="hover:bg-gray-50 transition duration-100">
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                            <?php echo htmlspecialchars($request['request_id']); ?>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-700">
+                            <a href="request_review.php?id=<?php echo $request['request_id']; ?>" class="text-indigo-600 hover:text-indigo-800 font-semibold truncate block">
+                                <?php echo htmlspecialchars($request['request_title']); ?>
+                            </a>
+                            <span class="text-xs text-gray-500 italic"><?php echo htmlspecialchars($request['request_type']); ?></span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                            ₱<?php echo number_format($request['amount_requested'], 2); ?>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-700 space-y-1">
+                            <div class="flex items-center space-x-2">
+                                <span class="text-xs w-16 text-gray-500">Adviser:</span>
+                                <?php echo render_status_badge($request['adviser_status']); ?>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <span class="text-xs w-16 text-gray-500">Dean:</span>
+                                <?php echo render_status_badge($request['dean_status']); ?>
+                            </div>
+                            <!-- Show the final two steps only if the adviser/dean steps are completed to keep it clean -->
+                            <?php if ($request['adviser_status'] === 'Approved' && $request['dean_status'] === 'Approved'): ?>
+                                <div class="flex items-center space-x-2">
+                                    <span class="text-xs w-16 text-gray-500">OSAFA:</span>
+                                    <?php echo render_status_badge($request['osafa_status']); ?>
+                                </div>
+                                <div class="flex items-center space-x-2">
+                                    <span class="text-xs w-16 text-gray-500">AFO:</span>
+                                    <?php echo render_status_badge($request['afo_status']); ?>
+                                </div>
+                            <?php endif; ?>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm">
+                            <span class="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full 
+                                <?php 
+                                    if ($request['notification_status'] === 'Final Approved') {
+                                        echo 'bg-green-100 text-green-800 border border-green-400';
+                                    } elseif ($request['notification_status'] === 'Final Rejected') {
+                                        echo 'bg-red-100 text-red-800 border border-red-400';
+                                    } elseif (strpos($request['notification_status'], 'Awaiting') !== false) {
+                                        echo 'bg-yellow-100 text-yellow-800 border border-yellow-400';
+                                    } else {
+                                        echo 'bg-blue-100 text-blue-800 border border-blue-400';
+                                    }
+                                ?>">
+                                <?php echo htmlspecialchars($request['notification_status']); ?>
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            <?php echo date('M d, Y', strtotime($request['date_submitted'])); ?>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+            <?php endif; ?>
+        </tbody>
+    </table>
+</div>
+
+<?php
+// Call the end_page function to output the footer and closing tags
+end_page();
 // Close connection
 mysqli_close($link);
 ?>
-
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Requests | AUF System</title>
-    <!-- Tailwind CSS CDN -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        body { font-family: 'Inter', sans-serif; background-color: #f4f7f9; }
-        .status-pill { 
-            padding: 4px 10px; 
-            border-radius: 9999px; 
-            font-size: 0.75rem; 
-            font-weight: 600; 
-            border: 1px solid; 
-            display: inline-block;
-        }
-    </style>
-</head>
-<body class="min-h-screen">
-    
-    <!-- Navigation Bar -->
-    <div class="bg-indigo-900 text-white p-4 shadow-lg flex justify-between items-center">
-        <h1 class="text-xl font-bold">AUF Officer Panel</h1>
-        <div class="flex items-center space-x-4">
-            <a href="dashboard.php" class="hover:text-indigo-200 transition duration-150">Dashboard</a>
-            <span class="text-sm font-light">
-                Logged in as: <b><?php echo htmlspecialchars($_SESSION["full_name"]); ?></b>
-            </span>
-            <a href="logout.php" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-lg transition duration-150">Logout</a>
-        </div>
-    </div>
-
-    <div class="container mx-auto p-4 sm:p-8">
-        <div class="flex justify-between items-center mb-6 border-b pb-4">
-            <h2 class="text-3xl font-extrabold text-gray-800">My Organization Requests</h2>
-            <a href="request_create.php" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold shadow-md transition duration-150">
-                + Submit New Request
-            </a>
-        </div>
-
-        <?php if ($error_message): ?>
-            <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-8 rounded-lg" role="alert">
-                <p class="font-bold">Database Error</p>
-                <p><?php echo $error_message; ?></p>
-            </div>
-        <?php elseif (empty($requests)): ?>
-            <div class="bg-blue-100 border-l-4 border-blue-500 text-blue-700 p-8 mb-8 rounded-xl">
-                <p class="text-lg font-semibold">No Requests Found</p>
-                <p class="mt-2">Your organization, **<?php echo htmlspecialchars($_SESSION["org_name"] ?? 'Your Org'); ?>**, has not submitted any requests yet.</p>
-            </div>
-        <?php else: ?>
-            <div class="bg-white rounded-xl shadow-2xl overflow-x-auto">
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title / Type</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Submitted On</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Final Status</th>
-                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Notification</th>
-                            <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody class="bg-white divide-y divide-gray-200">
-                        <?php foreach ($requests as $request): ?>
-                        <tr>
-                            <td class="px-6 py-4 whitespace-nowrap">
-                                <div class="text-sm font-medium text-gray-900"><?php echo htmlspecialchars($request['title']); ?></div>
-                                <div class="text-xs text-gray-500"><?php echo htmlspecialchars($request['type']); ?></div>
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-semibold">
-                                <?php echo $request['amount'] !== null ? '₱' . number_format($request['amount'], 2) : 'N/A'; ?>
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                <?php echo date('M d, Y', strtotime($request['date_submitted'])); ?>
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap">
-                                <span class="status-pill <?php echo get_status_class($request['final_status']); ?>">
-                                    <?php echo htmlspecialchars($request['final_status']); ?>
-                                </span>
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap">
-                                <span class="status-pill <?php echo get_status_class($request['notification_status']); ?>">
-                                    <?php echo htmlspecialchars($request['notification_status']); ?>
-                                </span>
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
-                                <a href="request_details.php?id=<?php echo htmlspecialchars($request['request_id']); ?>" class="text-indigo-600 hover:text-indigo-900 font-semibold transition duration-150">
-                                    View Details
-                                </a>
-                                <?php if ($request['final_status'] === 'Pending'): ?>
-                                    <!-- Edit/Delete only allowed if the request is still pending for any stage -->
-                                    <a href="edit_request.php?id=<?php echo htmlspecialchars($request['request_id']); ?>" class="text-yellow-600 hover:text-yellow-900 transition duration-150 ml-2">Edit</a>
-                                <?php endif; ?>
-                            </td>
-                        </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
-        <?php endif; ?>
-    </div>
-</body>
-</html>
