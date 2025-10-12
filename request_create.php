@@ -260,9 +260,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                         <select name="type" id="type" 
                                 class="mt-1 block w-full px-4 py-2 border rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white <?php echo (!empty($type_err)) ? 'is-invalid' : 'border-gray-300'; ?>" required>
                             <option value="">-- Select Type --</option>
-                            <option value="Fund Request" <?php echo ($type == 'Fund Request') ? 'selected' : ''; ?>>Fund Request</option>
+                            <option value="Budget Request" <?php echo ($type == 'Budget Request') ? 'selected' : ''; ?>>Budget Request</option>
+                            <option value="Liquidation Report" <?php echo ($type == 'Liquidation Report') ? 'selected' : ''; ?>>Liquidation Report</option>
                             <option value="Reimbursement" <?php echo ($type == 'Reimbursement') ? 'selected' : ''; ?>>Reimbursement</option>
-                            <option value="Materials Purchase" <?php echo ($type == 'Materials Purchase') ? 'selected' : ''; ?>>Materials Purchase</option>
                         </select>
                         <span class="invalid-feedback"><?php echo $type_err; ?></span>
                     </div>
