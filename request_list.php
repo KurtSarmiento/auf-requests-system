@@ -112,7 +112,7 @@ mysqli_close($link);
     <div class="container mx-auto p-4 sm:p-8">
         <div class="flex justify-between items-center mb-6 border-b pb-4">
             <h2 class="text-3xl font-extrabold text-gray-800">My Organization Requests</h2>
-            <a href="create_request.php" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold shadow-md transition duration-150">
+            <a href="request_create.php" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-semibold shadow-md transition duration-150">
                 + Submit New Request
             </a>
         </div>
