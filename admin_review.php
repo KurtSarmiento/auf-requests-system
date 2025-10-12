@@ -11,21 +11,12 @@ if (!isset($_SESSION["loggedin"]) || $_SESSION["loggedin"] !== true || !in_array
 
 require_once "db_config.php";
 
-// Define current role FIRST, as it is needed early in the script
+// Define current role FIRST
 $current_role = $_SESSION["role"];
 $user_org_id = isset($_SESSION["org_id"]) ? (int)$_SESSION["org_id"] : 0;
 $request = null;
 $error_message = $success_message = "";
 $request_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
-
-
-// --- TEMPORARY DEBUG ---
-if ($current_role === 'Adviser') {
-    echo "<div style='background-color: #ffdddd; border: 1px solid #cc0000; padding: 10px; margin-bottom: 20px; font-weight: bold;'>";
-    echo "DEBUG: Logged in as Adviser. System is filtering by org_id: " . $user_org_id;
-    echo "</div>";
-}
-// --- END TEMPORARY DEBUG ---
 
 // Determine the SQL column names corresponding to the current user's role
 $role_data = match($current_role) {
@@ -122,12 +113,10 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
 
                 if ($types !== "i") { // Only execute if there's something to update besides ID
                     if ($stmt = mysqli_prepare($link, $update_notifications_sql)) {
-                        // Use a direct approach for binding, passing variables by reference
                         $bind_params = array_merge([$types], $params);
                         
-                        // Manually create an array of references for call_user_func_array
                         $refs = [];
-                        foreach ($bind_params as $key => $value) {
+                        foreach ($bind_params as $key => &$value) {
                             $refs[$key] = &$bind_params[$key];
                         }
 
@@ -202,19 +191,17 @@ if ($request_id > 0) {
     // Only proceed if request_id is still valid
     if ($request_id > 0 && $stmt = mysqli_prepare($link, $sql)) {
 
-        // --- DYNAMIC BINDING FIX ---
-        // Dynamically bind the types and parameters using references
+        // --- DYNAMIC BINDING ---
         $bind_params = [];
         $bind_params[] = $types;
         foreach ($params as $key => &$value) {
             $bind_params[] = &$value;
         }
         
-        // This handles both 1 parameter (non-Adviser) and 2 parameters (Adviser)
         if (!call_user_func_array('mysqli_stmt_bind_param', array_merge([$stmt], $bind_params))) {
             $error_message = "Error binding parameters: " . $stmt->error;
         }
-        // --- END DYNAMIC BINDING FIX ---
+        // --- END DYNAMIC BINDING ---
 
         if (mysqli_stmt_execute($stmt)) {
             $result = mysqli_stmt_get_result($stmt);
@@ -231,14 +218,18 @@ if ($request_id > 0) {
                     };
 
                     if ($previous_status_col && $request[$previous_status_col] !== 'Approved') {
-                        $error_message = "This request is not yet ready for your review. It must first be **Approved** by the previous signatory.";
+                        $error_message = "This request is not yet ready for your review. It must first be **Approved** by the previous signatory (".$previous_status_col.").";
                         $request = null; // Prevent display
                     }
                 }
 
             } else {
-                // This is the error message for Adviser permission failure or non-existent ID
-                $error_message = "Request not found or you do not have permission to view it. (ID: " . $request_id . ", Org Filter Active: " . ($current_role === 'Adviser' ? 'Yes' : 'No') . ")";
+                // Improved message to hint at permission issues
+                if ($current_role === 'Adviser') {
+                    $error_message = "Request #".$request_id." not found or it does not belong to your organization (Org ID: ".$user_org_id.").";
+                } else {
+                    $error_message = "Request not found or you do not have permission to view it.";
+                }
             }
         } else {
             $error_message = "Error executing request fetch query: " . mysqli_error($link);
