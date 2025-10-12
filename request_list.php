@@ -102,7 +102,7 @@ if (!empty($error_message)) {
                             <?php echo htmlspecialchars($request['request_id']); ?>
                         </td>
                         <td class="px-6 py-4 text-sm text-gray-700">
-                            <a href="request_review.php?id=<?php echo $request['request_id']; ?>" class="text-indigo-600 hover:text-indigo-800 font-semibold truncate block">
+                            <a href="request_details.php?id=<?php echo $request['request_id']; ?>" class="text-indigo-600 hover:text-indigo-800 font-semibold truncate block">
                                 <?php echo htmlspecialchars($request['request_title']); ?>
                             </a>
                             <span class="text-xs text-gray-500 italic"><?php echo htmlspecialchars($request['request_type']); ?></span>
