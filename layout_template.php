@@ -30,7 +30,7 @@ function start_page($title, $role, $full_name) {
             <div class="flex items-center space-x-6">
                 <?php if ($role === 'Officer'): ?>
                     <a href="officer_dashboard.php" class="hover:text-blue-300 transition duration-150 font-medium">Dashboard</a>
-                    <a href="request_form.php" class="hover:text-blue-300 transition duration-150 font-medium">New Request</a>
+                    <a href="request_create.php" class="hover:text-blue-300 transition duration-150 font-medium">New Request</a>
                     <a href="request_list.php" class="hover:text-blue-300 transition duration-150 font-medium">My Submissions</a>
                 <?php else: // Signatory Roles ?>
                     <a href="admin_dashboard.php" class="hover:text-blue-300 transition duration-150 font-medium">Admin Dashboard</a>
