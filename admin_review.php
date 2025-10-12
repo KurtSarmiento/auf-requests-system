@@ -10,7 +10,15 @@ if (!isset($_SESSION["loggedin"]) || $_SESSION["loggedin"] !== true || !in_array
 }
 
 require_once "db_config.php";
+
+// Define current role FIRST, as it is needed early in the script
+$current_role = $_SESSION["role"];
 $user_org_id = isset($_SESSION["org_id"]) ? (int)$_SESSION["org_id"] : 0;
+$request = null;
+$error_message = $success_message = "";
+$request_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+
+
 // --- TEMPORARY DEBUG ---
 if ($current_role === 'Adviser') {
     echo "<div style='background-color: #ffdddd; border: 1px solid #cc0000; padding: 10px; margin-bottom: 20px; font-weight: bold;'>";
@@ -18,10 +26,6 @@ if ($current_role === 'Adviser') {
     echo "</div>";
 }
 // --- END TEMPORARY DEBUG ---
-$current_role = $_SESSION["role"];
-$request = null;
-$error_message = $success_message = "";
-$request_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 
 // Determine the SQL column names corresponding to the current user's role
 $role_data = match($current_role) {
@@ -149,7 +153,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
         // --- C. Commit or Rollback Transaction ---
         if ($success) {
             mysqli_commit($link);
-            header("location: admin_request_list.php?success=1");
+            // Redirect to the list page after successful submission
+            header("location: admin_request_list.php?success=1"); 
             exit;
         } else {
             mysqli_rollback($link);
@@ -177,24 +182,40 @@ if ($request_id > 0) {
             r.request_id = ?
     ";
 
-    $params = ["i", $request_id];
+    $types = "i"; // Type string starts with 'i' for request_id
+    $params = [$request_id]; // Parameters array starts with request_id
 
-    // If Adviser, restrict to their organization
+    // Conditional filtering for Adviser role
     if ($current_role === 'Adviser') {
         if ($user_org_id > 0) {
             // Apply organization ID filter and add parameter
             $sql .= " AND u.org_id = ?";
-            $params[0] .= "i"; // Append 'i' for integer type
+            $types .= "i"; // Append 'i' for integer type
             $params[] = $user_org_id; // Add the org_id parameter
         } else {
             // If the Adviser has no org_id, show an explicit error and stop.
             $error_message = "Adviser account is not linked to any organization (org_id is missing or 0). Cannot view requests.";
-            $request_id = 0; 
+            $request_id = 0; // Invalidates the fetch attempt below
         }
     }
+    
+    // Only proceed if request_id is still valid
+    if ($request_id > 0 && $stmt = mysqli_prepare($link, $sql)) {
 
-    if ($stmt = mysqli_prepare($link, $sql)) {
-        mysqli_stmt_bind_param($stmt, "i", $request_id);
+        // --- DYNAMIC BINDING FIX ---
+        // Dynamically bind the types and parameters using references
+        $bind_params = [];
+        $bind_params[] = $types;
+        foreach ($params as $key => &$value) {
+            $bind_params[] = &$value;
+        }
+        
+        // This handles both 1 parameter (non-Adviser) and 2 parameters (Adviser)
+        if (!call_user_func_array('mysqli_stmt_bind_param', array_merge([$stmt], $bind_params))) {
+            $error_message = "Error binding parameters: " . $stmt->error;
+        }
+        // --- END DYNAMIC BINDING FIX ---
+
         if (mysqli_stmt_execute($stmt)) {
             $result = mysqli_stmt_get_result($stmt);
             if (mysqli_num_rows($result) == 1) {
@@ -210,21 +231,22 @@ if ($request_id > 0) {
                     };
 
                     if ($previous_status_col && $request[$previous_status_col] !== 'Approved') {
-                        $error_message = "This request is not yet ready for your review. It must first be **Approved** by the previous signatory (".$previous_status_col.").";
+                        $error_message = "This request is not yet ready for your review. It must first be **Approved** by the previous signatory.";
                         $request = null; // Prevent display
                     }
                 }
 
             } else {
-                $error_message = "Request not found or you do not have permission to view it.";
+                // This is the error message for Adviser permission failure or non-existent ID
+                $error_message = "Request not found or you do not have permission to view it. (ID: " . $request_id . ", Org Filter Active: " . ($current_role === 'Adviser' ? 'Yes' : 'No') . ")";
             }
         } else {
-            $error_message = "Error fetching request: " . mysqli_error($link);
+            $error_message = "Error executing request fetch query: " . mysqli_error($link);
         }
         mysqli_stmt_close($stmt);
     }
 } else {
-    $error_message = "No request ID provided.";
+    $error_message = "No request ID provided or user role error.";
 }
 
 // Close connection before HTML output
@@ -316,7 +338,7 @@ function get_status_class($status) {
                         <div class="bg-green-50 text-green-800 p-4 rounded-lg">
                             <p class="text-sm">File upload functionality is now implemented in **request_create.php**. This area should show attached documents.</p>
                         </div>
-                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -390,7 +412,7 @@ function get_status_class($status) {
                             </div>
 
                             <button type="submit" 
-                                    class="w-full bg-indigo-600 text-white py-3 rounded-lg text-lg font-semibold hover:bg-indigo-700 transition duration-150 shadow-md transform hover:scale-[1.01] active:scale-95">
+                                        class="w-full bg-indigo-600 text-white py-3 rounded-lg text-lg font-semibold hover:bg-indigo-700 transition duration-150 shadow-md transform hover:scale-[1.01] active:scale-95">
                                 Submit Decision
                             </button>
                         </form>
