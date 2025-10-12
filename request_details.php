@@ -2,80 +2,95 @@
 // Initialize the session
 session_start();
  
-// Check if the user is logged in. If not, redirect to login page.
+// Check if the user is logged in
 if (!isset($_SESSION["loggedin"]) || $_SESSION["loggedin"] !== true) {
     header("location: login.php");
     exit;
 }
 
-// Include database connection
 require_once "db_config.php";
 
-// Get user and organization info from session
-$current_org_id = $_SESSION["org_id"];
-$request_id = $_GET['id'] ?? null;
+// Get the request ID from the URL
+$request_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 $request = null;
+$error_message = "";
 
-// Function to determine CSS class for status pill (copied from request_list.php)
+// Security check: Only officers from the submitting organization can view the request.
+// Signatories (Adviser, Dean, etc.) use admin_review.php.
+$is_officer = $_SESSION["role"] === 'Officer';
+$org_id = $_SESSION["org_id"];
+
+// Function to determine CSS class for status pill
 function get_status_class($status) {
     switch ($status) {
         case 'Approved':
             return 'bg-green-100 text-green-800 border-green-500';
         case 'Rejected':
             return 'bg-red-100 text-red-800 border-red-500';
-        case 'Under Review':
+        case 'Awaiting AFO Approval':
             return 'bg-yellow-100 text-yellow-800 border-yellow-500';
+        case 'Budget Available':
+            return 'bg-purple-100 text-purple-800 border-purple-500 font-bold';
         case 'Pending':
         default:
             return 'bg-blue-100 text-blue-800 border-blue-500';
     }
 }
 
-// Check if an ID was provided and is numeric
-if (!is_numeric($request_id) || $request_id <= 0) {
-    $error_message = "Invalid request ID provided.";
-} else {
-    // Prepare the SQL statement to fetch the specific request
-    // IMPORTANT: We join with users to ensure the request belongs to the user's organization for security.
-    $sql = "
-        SELECT 
-            r.*, 
-            u.full_name AS submitted_by,
-            o.org_name
-        FROM 
-            requests r
-        JOIN 
-            users u ON r.user_id = u.user_id
-        JOIN 
-            organizations o ON u.org_id = o.org_id
-        WHERE 
-            r.request_id = ? AND u.org_id = ?
-    ";
+// Prepare the SQL query to select all request details
+// We select all the new status columns and join with users and organizations
+$sql = "
+    SELECT 
+        r.*, 
+        u.full_name AS submitted_by_name, 
+        o.org_name
+    FROM 
+        requests r
+    JOIN 
+        users u ON r.user_id = u.user_id
+    JOIN
+        organizations o ON u.org_id = o.org_id
+    WHERE 
+        r.request_id = ? 
+";
 
-    if ($stmt = mysqli_prepare($link, $sql)) {
-        // Bind parameters: integer (request_id), integer (org_id)
-        mysqli_stmt_bind_param($stmt, "ii", $param_request_id, $param_org_id);
-        $param_request_id = $request_id;
-        $param_org_id = $current_org_id;
+// If the user is an Officer, we must enforce that they can only see requests from their own organization.
+if ($is_officer) {
+    $sql .= " AND u.org_id = ?";
+}
 
-        if (mysqli_stmt_execute($stmt)) {
-            $result = mysqli_stmt_get_result($stmt);
-            if (mysqli_num_rows($result) == 1) {
-                $request = mysqli_fetch_assoc($result);
-            } else {
-                $error_message = "Request not found or you do not have permission to view it.";
-            }
-        } else {
-            $error_message = "Oops! Something went wrong with the database query.";
-        }
-        mysqli_stmt_close($stmt);
+if ($stmt = mysqli_prepare($link, $sql)) {
+    if ($is_officer) {
+        mysqli_stmt_bind_param($stmt, "ii", $request_id, $org_id); // 'i' for request_id, 'i' for org_id
     } else {
-        $error_message = "Database preparation error.";
+        // If it's an admin (who might access this page by mistake), only bind request_id
+        mysqli_stmt_bind_param($stmt, "i", $request_id);
     }
+
+    if (mysqli_stmt_execute($stmt)) {
+        $result = mysqli_stmt_get_result($stmt);
+        if (mysqli_num_rows($result) == 1) {
+            $request = mysqli_fetch_assoc($result);
+        } else {
+            $error_message = "Request not found or you do not have permission to view it.";
+        }
+    } else {
+        $error_message = "Database execution error: " . mysqli_error($link);
+    }
+
+    mysqli_stmt_close($stmt);
+} else {
+    $error_message = "Database statement preparation error: " . mysqli_error($link);
 }
 
 // Close connection
 mysqli_close($link);
+
+// Stop execution if request not found
+if (!$request && !$error_message) {
+    $error_message = "Invalid request ID.";
+}
+
 ?>
 
 <!DOCTYPE html>
@@ -83,114 +98,165 @@ mysqli_close($link);
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Request Details | AUF System</title>
+    <title><?php echo $request ? 'Request #' . htmlspecialchars($request['request_id']) : 'Request Not Found'; ?> | AUF System</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #f4f7f9; }
-        .detail-label { font-weight: 600; color: #4b5563; } /* gray-700 */
-        .detail-value { color: #1f2937; } /* gray-800 */
+        .status-pill { 
+            padding: 4px 10px; 
+            border-radius: 9999px; 
+            font-size: 0.75rem; 
+            font-weight: 600; 
+            border: 1px solid; 
+            display: inline-block;
+        }
+        .info-box {
+            padding: 1.5rem;
+            border-radius: 0.75rem;
+            background-color: #ffffff;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+        }
     </style>
 </head>
 <body class="min-h-screen">
     
     <!-- Navigation Bar -->
-    <div class="bg-indigo-800 text-white p-4 shadow-lg flex justify-between items-center">
-        <h1 class="text-xl font-bold">AUF Request System</h1>
+    <div class="bg-indigo-900 text-white p-4 shadow-lg flex justify-between items-center">
+        <h1 class="text-xl font-bold">AUF Officer Panel</h1>
         <div class="flex items-center space-x-4">
             <a href="dashboard.php" class="hover:text-indigo-200 transition duration-150">Dashboard</a>
             <a href="request_list.php" class="hover:text-indigo-200 transition duration-150">My Requests</a>
-            <span class="text-sm">Logged in as: <b><?php echo htmlspecialchars($_SESSION["username"]); ?></b></span>
+            <span class="text-sm font-light">
+                Logged in as: <b><?php echo htmlspecialchars($_SESSION["full_name"]); ?></b>
+            </span>
             <a href="logout.php" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-lg transition duration-150">Logout</a>
         </div>
     </div>
 
     <div class="container mx-auto p-4 sm:p-8">
-
-        <?php if (isset($error_message)): ?>
-            <!-- Error Message Display -->
-            <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-8 rounded-lg" role="alert">
-                <p class="font-bold">Error</p>
-                <p><?php echo $error_message; ?></p>
-            </div>
-            <a href="request_list.php" class="inline-block text-indigo-600 hover:text-indigo-800 font-medium">
-                &larr; Back to Request List
+        <div class="flex justify-between items-center mb-6">
+            <h2 class="text-3xl font-extrabold text-gray-800">
+                <?php echo $request ? 'Request #' . htmlspecialchars($request['request_id']) . ': ' . htmlspecialchars($request['title']) : 'Request Details'; ?>
+            </h2>
+            <a href="request_list.php" class="text-indigo-600 hover:text-indigo-800 transition duration-150 font-medium flex items-center">
+                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                Back to List
             </a>
+        </div>
 
-        <?php elseif ($request): ?>
-            <div class="flex justify-between items-center mb-6 border-b pb-4">
-                <h2 class="text-3xl font-extrabold text-gray-800">
-                    Request #<?php echo htmlspecialchars($request['request_id']); ?>: <?php echo htmlspecialchars($request['title']); ?>
-                </h2>
-                <a href="request_list.php" class="inline-flex items-center text-indigo-600 hover:text-indigo-800 font-medium transition duration-150">
-                    <!-- Arrow left icon -->
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                    </svg>
-                    Back to List
-                </a>
+        <?php if ($error_message): ?>
+            <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-6 mb-8 rounded-xl shadow-lg">
+                <p class="font-bold text-xl">Access Denied or Error</p>
+                <p class="mt-2"><?php echo $error_message; ?></p>
             </div>
+        <?php else: ?>
 
-            <!-- Main Request Details Grid -->
-            <div class="bg-white p-6 md:p-10 rounded-xl shadow-2xl mb-8">
-                <h3 class="text-xl font-bold text-gray-800 border-b pb-3 mb-5">Summary</h3>
-
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <!-- Status -->
-                    <div class="p-4 rounded-lg border-2 <?php echo get_status_class($request['status']); ?>">
-                        <p class="text-sm detail-label">Current Status</p>
-                        <p class="text-2xl font-bold mt-1"><?php echo htmlspecialchars($request['status']); ?></p>
+            <!-- Summary Section -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+                
+                <!-- Status Box (Where the error was) -->
+                <div class="info-box border-l-4 border-blue-500 bg-blue-50/70">
+                    <p class="text-sm font-medium text-gray-500 mb-2">Current Final Status</p>
+                    <?php 
+                        // ** FIX APPLIED: Using 'final_status' key instead of 'status' **
+                        $final_status = htmlspecialchars($request['final_status']);
+                    ?>
+                    <div class="text-2xl font-bold text-gray-800">
+                        <span class="status-pill <?php echo get_status_class($final_status); ?>">
+                            <?php echo $final_status; ?>
+                        </span>
                     </div>
+                </div>
 
-                    <!-- Type -->
-                    <div class="p-4 bg-gray-50 rounded-lg">
-                        <p class="text-sm detail-label">Request Type</p>
-                        <p class="text-lg detail-value font-medium"><?php echo htmlspecialchars($request['type']); ?></p>
-                    </div>
+                <!-- Type Box -->
+                <div class="info-box">
+                    <p class="text-sm font-medium text-gray-500 mb-2">Request Type</p>
+                    <p class="text-xl font-bold text-gray-800"><?php echo htmlspecialchars($request['type']); ?></p>
+                </div>
 
-                    <!-- Date Submitted -->
-                    <div class="p-4 bg-gray-50 rounded-lg">
-                        <p class="text-sm detail-label">Date Submitted</p>
-                        <p class="text-lg detail-value font-medium"><?php echo date('M d, Y H:i:s', strtotime($request['date_submitted'])); ?></p>
-                    </div>
-
-                    <!-- Organization -->
-                    <div class="p-4 bg-gray-50 rounded-lg">
-                        <p class="text-sm detail-label">Organization</p>
-                        <p class="text-lg detail-value font-medium"><?php echo htmlspecialchars($request['org_name']); ?></p>
-                    </div>
-
-                    <!-- Submitted By -->
-                    <div class="p-4 bg-gray-50 rounded-lg">
-                        <p class="text-sm detail-label">Submitted By</p>
-                        <p class="text-lg detail-value font-medium"><?php echo htmlspecialchars($request['submitted_by']); ?></p>
-                    </div>
-
-                    <!-- Amount -->
-                    <div class="p-4 bg-gray-50 rounded-lg">
-                        <p class="text-sm detail-label">Requested/Liquidated Amount</p>
-                        <p class="text-lg detail-value font-medium">
-                            <?php echo $request['amount'] !== NULL ? '₱' . number_format($request['amount'], 2) : 'N/A'; ?>
-                        </p>
-                    </div>
+                <!-- Date Submitted Box -->
+                <div class="info-box">
+                    <p class="text-sm font-medium text-gray-500 mb-2">Date Submitted</p>
+                    <p class="text-xl font-bold text-gray-800">
+                        <?php echo date('M d, Y H:i:s', strtotime($request['date_submitted'])); ?>
+                    </p>
                 </div>
             </div>
 
-            <!-- Description Section -->
-            <div class="bg-white p-6 md:p-10 rounded-xl shadow-2xl mb-8">
-                <h3 class="text-xl font-bold text-gray-800 border-b pb-3 mb-5">Detailed Description</h3>
-                <div class="prose max-w-none text-gray-700 leading-relaxed whitespace-pre-wrap">
-                    <?php echo htmlspecialchars($request['description']); ?>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+                <!-- Organization Box -->
+                <div class="info-box">
+                    <p class="text-sm font-medium text-gray-500 mb-2">Organization</p>
+                    <p class="text-xl font-bold text-gray-800"><?php echo htmlspecialchars($request['org_name']); ?></p>
+                </div>
+                
+                <!-- Submitted By Box -->
+                <div class="info-box">
+                    <p class="text-sm font-medium text-gray-500 mb-2">Submitted By</p>
+                    <p class="text-xl font-bold text-gray-800"><?php echo htmlspecialchars($request['submitted_by_name']); ?></p>
+                </div>
+
+                <!-- Amount Box -->
+                <div class="info-box">
+                    <p class="text-sm font-medium text-gray-500 mb-2">Requested Amount</p>
+                    <p class="text-xl font-bold text-indigo-700">
+                        ₱<?php echo number_format($request['amount'], 2); ?>
+                    </p>
                 </div>
             </div>
 
-            <!-- File Attachments Section (Placeholder for future development) -->
-            <div class="bg-white p-6 md:p-10 rounded-xl shadow-2xl">
-                <h3 class="text-xl font-bold text-gray-800 border-b pb-3 mb-5">File Attachments (Documents/Images)</h3>
-                <div class="text-gray-500 italic p-4 bg-gray-50 rounded-lg">
-                    No files have been attached yet. This feature will be implemented in a later step.
+            <!-- Description and Approval Status -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+                <!-- Description -->
+                <div class="lg:col-span-2 info-box h-full">
+                    <h3 class="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">Detailed Justification</h3>
+                    <p class="text-gray-700 whitespace-pre-wrap"><?php echo htmlspecialchars($request['description']); ?></p>
                 </div>
-                <!-- Future loop will go here to list files from the 'files' table -->
+
+                <!-- Approval Stages -->
+                <div class="info-box border-l-4 border-gray-300 bg-gray-50">
+                    <h3 class="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">Approval Flow</h3>
+                    <div class="space-y-3">
+                        <?php 
+                        $signatories = [
+                            'Adviser' => 'adviser_status',
+                            'Dean' => 'dean_status',
+                            'OSAFA Head' => 'osafa_status',
+                            'AFO Head' => 'afo_status'
+                        ];
+                        
+                        foreach ($signatories as $role_name => $col_name): 
+                            $status = htmlspecialchars($request[$col_name]);
+                        ?>
+                            <div class="flex justify-between items-center text-sm">
+                                <p class="font-medium text-gray-700"><?php echo $role_name; ?></p>
+                                <span class="status-pill <?php echo get_status_class($status); ?>">
+                                    <?php echo $status; ?>
+                                </span>
+                            </div>
+                        <?php endforeach; ?>
+                        
+                        <div class="pt-4 border-t border-gray-200">
+                            <p class="font-semibold text-gray-800 mb-2">Budget Availability</p>
+                            <?php 
+                                // Displaying notification status here
+                                $notification_status = htmlspecialchars($request['notification_status']);
+                            ?>
+                            <span class="status-pill text-sm <?php echo get_status_class($notification_status); ?>">
+                                <?php echo $notification_status; ?>
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Placeholder for Files -->
+                <div class="lg:col-span-3 info-box bg-yellow-50 border-yellow-500 border-dashed border-2">
+                    <h3 class="text-xl font-semibold text-yellow-800 mb-4">Supporting Attachments (Coming Next)</h3>
+                    <p class="text-yellow-700">Once the file upload feature is implemented, any attached documents will be listed here for download.</p>
+                </div>
+
             </div>
 
         <?php endif; ?>
