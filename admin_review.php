@@ -62,17 +62,25 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
             ";
             
             if ($stmt = mysqli_prepare($link, $update_sql)) {
-                mysqli_stmt_bind_param($stmt, "ssi", $decision, $comment, $request_id);
+                // *** CRITICAL FIX: Ensure proper variable binding for the UPDATE query ***
+                if (!mysqli_stmt_bind_param($stmt, "ssi", $decision, $comment, $request_id)) {
+                    // Added for debugging if bind param fails
+                    throw new Exception("Error binding parameters for update: " . mysqli_stmt_error($stmt));
+                }
+
                 if (!mysqli_stmt_execute($stmt)) {
-                    $success = false;
+                    // Added for debugging if execute fails
+                    $error = mysqli_stmt_error($stmt);
+                    mysqli_stmt_close($stmt);
+                    throw new Exception("Error executing update query: " . $error);
                 }
                 mysqli_stmt_close($stmt);
             } else {
-                $success = false;
+                throw new Exception("Error preparing update statement: " . mysqli_error($link));
             }
             
             // --- B. Update final/notification status based on decision and role ---
-            if ($success) {
+            if ($success) { // Still true unless caught an exception above
                 $final_status_update = '';
                 $notification_status_update = '';
 
@@ -120,6 +128,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
                             $refs[$key] = &$bind_params[$key];
                         }
 
+                        // Use call_user_func_array for dynamic binding
                         if (!call_user_func_array('mysqli_stmt_bind_param', array_merge([$stmt], $refs))) {
                             $success = false;
                         }
@@ -137,6 +146,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
 
         } catch (Exception $e) {
             $success = false;
+            // Capture the specific exception message
+            $error_message = $e->getMessage(); 
         }
 
         // --- C. Commit or Rollback Transaction ---
@@ -147,7 +158,13 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
             exit;
         } else {
             mysqli_rollback($link);
-            $error_message = "Failed to update request status in the database. Please try again. Transaction rolled back. " . mysqli_error($link);
+            // If an exception was caught, use that message; otherwise, use the generic message
+            if (empty($error_message)) {
+                 $error_message = "Failed to update request status in the database. Please try again. Transaction rolled back. " . mysqli_error($link);
+            } else {
+                 $error_message = "Failed to update request status in the database. Transaction rolled back. **DB ERROR**: " . $error_message;
+            }
+           
         }
     }
 }
@@ -191,7 +208,7 @@ if ($request_id > 0) {
     // Only proceed if request_id is still valid
     if ($request_id > 0 && $stmt = mysqli_prepare($link, $sql)) {
 
-        // --- DYNAMIC BINDING ---
+        // --- DYNAMIC BINDING for FETCH QUERY ---
         $bind_params = [];
         $bind_params[] = $types;
         foreach ($params as $key => &$value) {
@@ -199,7 +216,7 @@ if ($request_id > 0) {
         }
         
         if (!call_user_func_array('mysqli_stmt_bind_param', array_merge([$stmt], $bind_params))) {
-            $error_message = "Error binding parameters: " . $stmt->error;
+            $error_message = "Error binding parameters for fetch query: " . $stmt->error;
         }
         // --- END DYNAMIC BINDING ---
 
