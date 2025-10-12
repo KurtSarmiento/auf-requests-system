@@ -39,14 +39,15 @@ function render_status_badge($status) {
 }
 
 // SQL to select all requests submitted by the logged-in officer
-// We need all approval statuses here for the officer to track progress.
+// FIX: Changed JOIN to connect requests -> users -> organizations because requests table does not have org_id.
 $sql = "SELECT 
-            r.request_id, r.title, r.type, r.amount, 
-            r.date_submitted, r.final_status, r.notification_status,
+            r.request_id, r.title AS request_title, r.type AS request_type, r.amount AS amount_requested, 
+            r.notification_status, r.date_submitted,
             r.adviser_status, r.dean_status, r.osafa_status, r.afo_status, 
             o.org_name
         FROM requests r
-        INNER JOIN organizations o ON r.org_id = o.org_id
+        INNER JOIN users u ON r.user_id = u.user_id
+        INNER JOIN organizations o ON u.org_id = o.org_id
         WHERE r.user_id = ? 
         ORDER BY r.date_submitted DESC";
 
