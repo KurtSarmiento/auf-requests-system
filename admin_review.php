@@ -18,19 +18,19 @@ $request = null;
 $error_message = $success_message = "";
 $request_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 
-// Determine the SQL column names corresponding to the current user's role
+// Determine the SQL column names corresponding to the current user's role.
+// Format: [0] = Current Status Column, [1] = Next Status Column, [2] = Next Notification Status
 $role_data = match($current_role) {
-    'Adviser' => ['adviser_status', 'adviser_remark', 'dean_status', 'Awaiting Dean Approval'],
-    'Dean' => ['dean_status', 'dean_remark', 'osafa_status', 'Awaiting OSAFA Approval'],
-    'OSAFA' => ['osafa_status', 'osafa_remark', 'afo_status', 'Awaiting AFO Approval'],
-    'AFO' => ['afo_status', 'afo_remark', null, 'Budget Available'], // Final stage
-    default => [null, null, null, null],
+    'Adviser' => ['adviser_status', 'dean_status', 'Awaiting Dean Approval'],
+    'Dean' => ['dean_status', 'osafa_status', 'Awaiting OSAFA Approval'],
+    'OSAFA' => ['osafa_status', 'afo_status', 'Awaiting AFO Approval'],
+    'AFO' => ['afo_status', null, 'Budget Available'], // Final stage, no next status column
+    default => [null, null, null],
 };
 
 $status_column = $role_data[0]; // e.g., 'adviser_status'
-$remark_column = $role_data[1]; // e.g., 'adviser_remark'
-$next_status_column = $role_data[2]; // e.g., 'dean_status'
-$next_notification = $role_data[3]; // e.g., 'Awaiting Dean Approval'
+$next_status_column = $role_data[1]; // e.g., 'dean_status' (or null for AFO)
+$next_notification = $role_data[2]; // e.g., 'Awaiting Dean Approval'
 
 if (!$status_column) {
     die("Error: Unrecognized administrative role.");
@@ -39,37 +39,33 @@ if (!$status_column) {
 // --- 1. Handle Form Submission (Decision) ---
 if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
     $decision = trim($_POST['decision'] ?? ''); // 'Approved' or 'Rejected'
-    $comment = trim($_POST['comment'] ?? '');
+    // NOTE: Comment is not being processed as there is no corresponding DB column.
+    
     $valid_decisions = ['Approved', 'Rejected'];
 
     if (!in_array($decision, $valid_decisions)) {
         $error_message = "Invalid decision submitted.";
-    } elseif ($decision === 'Rejected' && empty($comment)) {
-        $error_message = "A comment/reason is **required** for rejection.";
     } else {
         
         mysqli_begin_transaction($link);
         $success = true;
 
         try {
-            // --- A. Update current stage status and remark ---
+            // --- A. Update current stage status (No remark column being updated) ---
             $update_sql = "
                 UPDATE requests 
                 SET {$status_column} = ?, 
-                    {$remark_column} = ?, 
                     date_updated = NOW() 
                 WHERE request_id = ?
             ";
             
             if ($stmt = mysqli_prepare($link, $update_sql)) {
-                // *** CRITICAL FIX: Ensure proper variable binding for the UPDATE query ***
-                if (!mysqli_stmt_bind_param($stmt, "ssi", $decision, $comment, $request_id)) {
-                    // Added for debugging if bind param fails
+                // Binding: (s) for decision, (i) for request_id
+                if (!mysqli_stmt_bind_param($stmt, "si", $decision, $request_id)) {
                     throw new Exception("Error binding parameters for update: " . mysqli_stmt_error($stmt));
                 }
 
                 if (!mysqli_stmt_execute($stmt)) {
-                    // Added for debugging if execute fails
                     $error = mysqli_stmt_error($stmt);
                     mysqli_stmt_close($stmt);
                     throw new Exception("Error executing update query: " . $error);
@@ -80,7 +76,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
             }
             
             // --- B. Update final/notification status based on decision and role ---
-            if ($success) { // Still true unless caught an exception above
+            if ($success) {
                 $final_status_update = '';
                 $notification_status_update = '';
 
@@ -235,7 +231,7 @@ if ($request_id > 0) {
                     };
 
                     if ($previous_status_col && $request[$previous_status_col] !== 'Approved') {
-                        $error_message = "This request is not yet ready for your review. It must first be **Approved** by the previous signatory (".$previous_status_col.").";
+                        $error_message = "This request is not yet ready for your review. It must first be **Approved** by the previous signatory.";
                         $request = null; // Prevent display
                     }
                 }
@@ -414,10 +410,10 @@ function get_status_class($status) {
                                 </div>
                             </div>
                             
-                            <div>
-                                <label for="comment" class="block text-sm font-medium text-gray-700">Comments/Reason (Required for Rejection):</label>
-                                <textarea id="comment" name="comment" rows="3" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 p-2"></textarea>
+                            <div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-3 rounded-lg text-sm">
+                                <strong>Note:</strong> Comments and reasons are not being recorded because your database table does not have a dedicated remark/comment column for this stage. Only the status is updated.
                             </div>
+                            <input type="hidden" name="comment" value=""> 
 
                             <button type="submit" 
                                         class="w-full bg-indigo-600 text-white py-3 rounded-lg text-lg font-semibold hover:bg-indigo-700 transition duration-150 shadow-md transform hover:scale-[1.01] active:scale-95">
