@@ -93,7 +93,7 @@ start_page("Officer Dashboard", $role, $full_name);
 
     <div class="bg-card p-6 rounded-xl shadow-xl border border-gray-200">
         <p class="text-sm font-medium text-gray-500">Awaiting Approval</p>
-        <p class="text-4xl font-extrabold text-navyblue-900 mt-1"><?php echo $pending_count; ?></p>
+        <p class="text-4xl font-extrabold text-blue-900 mt-1"><?php echo $pending_count; ?></p>
         <p class="text-xs text-gray-500 mt-2">Currently in the pipeline</p>
     </div>
     

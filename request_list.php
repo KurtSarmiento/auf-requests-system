@@ -1,165 +1,136 @@
 <?php
-// Initialize the session
+// Initialize the session and include template/config
 session_start();
- 
-// Check if the user is logged in and is an Officer
-if(!isset($_SESSION["loggedin"]) || $_SESSION["loggedin"] !== true || $_SESSION["role"] !== 'Officer'){
+require_once "db_config.php";
+require_once "layout_template.php"; // Include the layout functions
+
+// Check if the user is logged in, if not then redirect to login page
+if (!isset($_SESSION["loggedin"]) || $_SESSION["loggedin"] !== true) {
     header("location: login.php");
     exit;
 }
- 
-// Include config file and layout template
-require_once "db_config.php";
-require_once "layout_template.php"; // NEW: Include the template file
 
-// Call the start_page function to output the header and navigation
-start_page("My Submitted Funding Requests");
-
-// Prepare to fetch data
+// --- DEFINE SESSION VARIABLES FOR TEMPLATE ---
 $user_id = $_SESSION["user_id"];
-$request_list = [];
-$error_message = "";
+$full_name = $_SESSION["full_name"];
+$role = $_SESSION["role"];
 
-// Helper function to render status badges
-function render_status_badge($status) {
-    $class = "bg-gray-200 text-gray-700"; // Default (Pending)
-    switch ($status) {
-        case 'Approved':
-            $class = "bg-green-100 text-green-700 border border-green-300";
-            break;
-        case 'Rejected':
-            $class = "bg-red-100 text-red-700 border border-red-300";
-            break;
-        case 'Pending':
-        default:
-            $class = "bg-yellow-100 text-yellow-700 border border-yellow-300";
-            break;
-    }
-    return '<span class="status-badge ' . $class . '">' . htmlspecialchars($status) . '</span>';
+// Check if the user is an Officer (this list is specifically for Officers)
+if ($role !== 'Officer') {
+    // If not an officer, redirect them to their appropriate dashboard
+    header("location: dashboard.php");
+    exit;
 }
 
-// SQL to select all requests submitted by the logged-in officer
-// FIX: Changed JOIN to connect requests -> users -> organizations because requests table does not have org_id.
+// Start the page using the template function, passing all 3 required arguments
+start_page("My Submitted Funding Requests", $role, $full_name);
+
+// Initialize array to hold requests
+$requests = [];
+
+// Prepare the SQL query
+// This query joins requests (r), users (u), and organizations (o) to get the org name
 $sql = "SELECT 
-            r.request_id, r.title AS request_title, r.type AS request_type, r.amount AS amount_requested, 
-            r.notification_status, r.date_submitted,
+            r.request_id, r.title, r.amount, r.date_submitted,
             r.adviser_status, r.dean_status, r.osafa_status, r.afo_status, 
-            o.org_name
+            r.final_status, r.notification_status, o.org_name
         FROM requests r
         INNER JOIN users u ON r.user_id = u.user_id
         INNER JOIN organizations o ON u.org_id = o.org_id
         WHERE r.user_id = ? 
         ORDER BY r.date_submitted DESC";
 
-if($stmt = mysqli_prepare($link, $sql)){
+if ($stmt = mysqli_prepare($link, $sql)) {
+    // Bind parameters
     mysqli_stmt_bind_param($stmt, "i", $user_id);
     
-    if(mysqli_stmt_execute($stmt)){
+    // Attempt to execute the prepared statement
+    if (mysqli_stmt_execute($stmt)) {
         $result = mysqli_stmt_get_result($stmt);
+        
         while ($row = mysqli_fetch_assoc($result)) {
-            $request_list[] = $row;
+            $requests[] = $row;
         }
-        mysqli_free_result($result);
-    } else{
-        $error_message = "ERROR: Could not execute query. " . mysqli_error($link);
+    } else {
+        echo "<div class='bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg mb-6 shadow-md'>ERROR: Could not execute query. " . mysqli_error($link) . "</div>";
     }
 
     mysqli_stmt_close($stmt);
-} else {
-    $error_message = "ERROR: Could not prepare statement. " . mysqli_error($link);
 }
 
-// Display error if present
-if (!empty($error_message)) {
-    echo '<div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6 rounded-lg" role="alert"><p>' . htmlspecialchars($error_message) . '</p></div>';
-}
+mysqli_close($link);
+
 ?>
 
-<div class="bg-white shadow-xl rounded-xl overflow-hidden">
-    <table class="min-w-full divide-y divide-gray-200">
-        <thead class="bg-gray-50">
-            <tr>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/12">ID</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-3/12">Request Title / Type</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/12">Amount</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-4/12">Approval Flow</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-2/12">Final Status</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/12">Submitted</th>
-            </tr>
-        </thead>
-        <tbody class="bg-white divide-y divide-gray-200">
-            <?php if (empty($request_list)): ?>
+<h2 class="text-3xl font-bold text-gray-800 mb-6 border-b pb-2">My Submitted Funding Requests</h2>
+<p class="text-lg text-gray-600 mb-8">Track the progress of your submissions through the multi-stage approval process.</p>
+
+<?php if (empty($requests)): ?>
+    <div class="bg-blue-50 border-l-4 border-blue-400 text-blue-700 p-4 rounded-lg shadow-md max-w-2xl mx-auto" role="alert">
+        <p class="font-bold">No Requests Found</p>
+        <p>You haven't submitted any funding requests yet. Click <a href="request_form.php" class="font-semibold underline hover:text-blue-800">here to start a new one</a>.</p>
+    </div>
+<?php else: ?>
+
+    <div class="bg-white p-4 rounded-xl shadow-2xl overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
                 <tr>
-                    <td colspan="6" class="px-6 py-4 text-center text-gray-500">
-                        You have not submitted any funding requests yet.
-                        <a href="request_create.php" class="text-indigo-600 hover:text-indigo-800 font-medium">Submit one now.</a>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Final Status</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Current Step</th>
+                    <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
+                </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+                <?php foreach ($requests as $request): ?>
+                <tr class="hover:bg-gray-50 transition duration-100">
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                        <?php echo htmlspecialchars($request['title']); ?>
+                        <div class="text-xs text-gray-500 mt-1"><?php echo htmlspecialchars($request['org_name']); ?></div>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        P<?php echo number_format($request['amount'], 2); ?>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <?php echo date('M d, Y', strtotime($request['date_submitted'])); ?>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <?php
+                            $status_class = 'bg-gray-100 text-gray-800';
+                            $final_status = htmlspecialchars($request['final_status']);
+                            if ($final_status === 'Approved') {
+                                $status_class = 'bg-green-100 text-green-800 font-semibold';
+                            } elseif ($final_status === 'Rejected') {
+                                $status_class = 'bg-red-100 text-red-800 font-semibold';
+                            } elseif ($final_status === 'Pending') {
+                                $status_class = 'bg-yellow-100 text-yellow-800';
+                            }
+                        ?>
+                        <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?php echo $status_class; ?>">
+                            <?php echo $final_status; ?>
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                        <?php echo htmlspecialchars($request['notification_status']); ?>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium text-center">
+                        <a href="request_details.php?id=<?php echo $request['request_id']; ?>" 
+                           class="text-blue-600 hover:text-blue-900 transition duration-150 font-semibold">
+                            View Details
+                        </a>
                     </td>
                 </tr>
-            <?php else: ?>
-                <?php foreach ($request_list as $request): ?>
-                    <tr class="hover:bg-gray-50 transition duration-100">
-                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                            <?php echo htmlspecialchars($request['request_id']); ?>
-                        </td>
-                        <td class="px-6 py-4 text-sm text-gray-700">
-                            <a href="request_details.php?id=<?php echo $request['request_id']; ?>" class="text-indigo-600 hover:text-indigo-800 font-semibold truncate block">
-                                <?php echo htmlspecialchars($request['request_title']); ?>
-                            </a>
-                            <span class="text-xs text-gray-500 italic"><?php echo htmlspecialchars($request['request_type']); ?></span>
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                            ₱<?php echo number_format($request['amount_requested'], 2); ?>
-                        </td>
-                        <td class="px-6 py-4 text-sm text-gray-700 space-y-1">
-                            <div class="flex items-center space-x-2">
-                                <span class="text-xs w-16 text-gray-500">Adviser:</span>
-                                <?php echo render_status_badge($request['adviser_status']); ?>
-                            </div>
-                            <div class="flex items-center space-x-2">
-                                <span class="text-xs w-16 text-gray-500">Dean:</span>
-                                <?php echo render_status_badge($request['dean_status']); ?>
-                            </div>
-                            <!-- Show the final two steps only if the adviser/dean steps are completed to keep it clean -->
-                            <?php if ($request['adviser_status'] === 'Approved' && $request['dean_status'] === 'Approved'): ?>
-                                <div class="flex items-center space-x-2">
-                                    <span class="text-xs w-16 text-gray-500">OSAFA:</span>
-                                    <?php echo render_status_badge($request['osafa_status']); ?>
-                                </div>
-                                <div class="flex items-center space-x-2">
-                                    <span class="text-xs w-16 text-gray-500">AFO:</span>
-                                    <?php echo render_status_badge($request['afo_status']); ?>
-                                </div>
-                            <?php endif; ?>
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm">
-                            <span class="px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full 
-                                <?php 
-                                    if ($request['notification_status'] === 'Final Approved') {
-                                        echo 'bg-green-100 text-green-800 border border-green-400';
-                                    } elseif ($request['notification_status'] === 'Final Rejected') {
-                                        echo 'bg-red-100 text-red-800 border border-red-400';
-                                    } elseif (strpos($request['notification_status'], 'Awaiting') !== false) {
-                                        echo 'bg-yellow-100 text-yellow-800 border border-yellow-400';
-                                    } else {
-                                        echo 'bg-blue-100 text-blue-800 border border-blue-400';
-                                    }
-                                ?>">
-                                <?php echo htmlspecialchars($request['notification_status']); ?>
-                            </span>
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            <?php echo date('M d, Y', strtotime($request['date_submitted'])); ?>
-                        </td>
-                    </tr>
                 <?php endforeach; ?>
-            <?php endif; ?>
-        </tbody>
-    </table>
-</div>
+            </tbody>
+        </table>
+    </div>
+
+<?php endif; ?>
 
 <?php
-// Call the end_page function to output the footer and closing tags
+// End the page using the template function
 end_page();
-// Close connection
-mysqli_close($link);
 ?>
