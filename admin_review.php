@@ -10,12 +10,11 @@ if (!isset($_SESSION["loggedin"]) || $_SESSION["loggedin"] !== true || !in_array
 }
 
 require_once "db_config.php";
-
+$user_org_id = isset($_SESSION["org_id"]) ? (int)$_SESSION["org_id"] : 0;
 $current_role = $_SESSION["role"];
 $request = null;
 $error_message = $success_message = "";
 $request_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
-$user_org_id = $_SESSION["org_id"]; // Used for Adviser filtering
 
 // Determine the SQL column names corresponding to the current user's role
 $role_data = match($current_role) {
@@ -172,9 +171,8 @@ if ($request_id > 0) {
     ";
 
     // If Adviser, restrict to their organization
-    if ($current_role === 'Adviser') {
-        $safe_org_id = (int)$user_org_id; 
-        $sql .= " AND u.org_id = " . $safe_org_id;
+    if ($current_role === 'Adviser' && $user_org_id > 0) {
+        $sql .= " AND u.org_id = " . $user_org_id;
     }
 
     if ($stmt = mysqli_prepare($link, $sql)) {
