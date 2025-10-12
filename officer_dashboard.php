@@ -93,16 +93,16 @@ start_page("Officer Dashboard", $role, $full_name);
     </div>
 
     <!-- Approved Card (Positive Blue/Green Accent) -->
-    <div class="bg-white p-6 rounded-xl shadow-lg border-2 border-teal-400 flex flex-col items-start">
-        <p class="text-sm font-semibold text-teal-600 uppercase tracking-wider">Final Approved</p>
-        <p class="text-5xl font-extrabold text-teal-700 mt-2"><?php echo $approved_count; ?></p>
+    <div class="bg-white p-6 rounded-xl shadow-lg border-2 border-blue-400 flex flex-col items-start">
+        <p class="text-sm font-semibold text-blue-600 uppercase tracking-wider">Final Approved</p>
+        <p class="text-5xl font-extrabold text-blue-700 mt-2"><?php echo $approved_count; ?></p>
         <p class="text-xs text-gray-500 mt-2">Ready for execution</p>
     </div>
 
     <!-- Pending Card (Warning Blue/Orange Accent) -->
-    <div class="bg-white p-6 rounded-xl shadow-lg border-2 border-amber-400 flex flex-col items-start">
-        <p class="text-sm font-semibold text-amber-600 uppercase tracking-wider">Awaiting Approval</p>
-        <p class="text-5xl font-extrabold text-amber-700 mt-2"><?php echo $pending_count; ?></p>
+    <div class="bg-white p-6 rounded-xl shadow-lg border-2 border-teal-400 flex flex-col items-start">
+        <p class="text-sm font-semibold text-teal-600 uppercase tracking-wider">Awaiting Approval</p>
+        <p class="text-5xl font-extrabold text-teal-700 mt-2"><?php echo $pending_count; ?></p>
         <p class="text-xs text-gray-500 mt-2">Currently in the pipeline</p>
     </div>
     
