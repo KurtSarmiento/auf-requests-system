@@ -284,22 +284,18 @@ if (!$request && !$error_message) {
                     <?php if (!empty($files)): ?>
                         <div class="space-y-3">
                             <?php foreach ($files as $file): ?>
-                                <div class="flex items-center justify-between p-3 bg-white rounded-lg border border-indigo-200 shadow-sm">
-                                    <p class="text-sm text-gray-700 font-medium truncate">
-                                        <?php echo htmlspecialchars($file['original_file_name']); ?>
-                                    </p>
-                                    <a href="uploads/<?php echo urlencode($file['file_name']); ?>" 
-                                       target="_blank" 
-                                       download
-                                       class="text-indigo-600 hover:text-indigo-800 flex items-center text-sm font-semibold ml-4 flex-shrink-0">
-                                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                                <div class="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200 shadow-sm">
+                                    <p class="text-sm text-gray-700 font-medium truncate"><?php echo htmlspecialchars($file['original_file_name']); ?></p>
+                                    <a href="download_file.php?fid=<?php echo (int)$file['file_id']; ?>" class="text-indigo-600 hover:text-indigo-800 text-sm font-semibold" target="_blank" rel="noopener noreferrer">
                                         Download
                                     </a>
                                 </div>
                             <?php endforeach; ?>
                         </div>
                     <?php else: ?>
-                        <p class="text-gray-600 italic">No supporting documents were attached to this request.</p>
+                        <div class="bg-green-50 text-green-800 p-4 rounded-lg">
+                            <p class="text-sm">No supporting documents attached to this request.</p>
+                        </div>
                     <?php endif; ?>
                 </div>
 

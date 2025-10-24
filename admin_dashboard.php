@@ -47,6 +47,16 @@ switch ($role) {
         $role_description = 'Administrator';
 }
 
+// Determine previous signatory column (used to ensure a request is only pending for you after prior approval)
+$previous_status_column = '';
+if ($role === 'Dean') {
+    $previous_status_column = 'adviser_status';
+} elseif ($role === 'OSAFA') {
+    $previous_status_column = 'dean_status';
+} elseif ($role === 'AFO') {
+    $previous_status_column = 'osafa_status';
+}
+
 // Initialize counts
 $total_reviewable = 0;
 $pending_count = 0;
@@ -100,38 +110,39 @@ if (!empty($status_column)) {
     }
     
     // --- Fetch Request Counts for Reviewer ---
-    // The query is structured to count based on the dynamic status column for the current user's role
+    // Build pending condition: role's status must be 'Pending' AND (if applicable) previous signatory must have 'Approved'
+    $pending_condition = "r.{$status_column} = 'Pending'";
+    if (!empty($previous_status_column)) {
+        $pending_condition .= " AND r.{$previous_status_column} = 'Approved'";
+    }
+
     $count_sql = "SELECT 
         COUNT(r.request_id) AS total_reviewable,
-        SUM(CASE WHEN r.notification_status = ? THEN 1 ELSE 0 END) AS pending,
-        SUM(CASE WHEN r.$status_column = 'Approved' THEN 1 ELSE 0 END) AS approved,
-        SUM(CASE WHEN r.$status_column = 'Rejected' THEN 1 ELSE 0 END) AS rejected
+        SUM(CASE WHEN {$pending_condition} THEN 1 ELSE 0 END) AS pending,
+        SUM(CASE WHEN r.{$status_column} = 'Approved' THEN 1 ELSE 0 END) AS approved,
+        SUM(CASE WHEN r.{$status_column} = 'Rejected' THEN 1 ELSE 0 END) AS rejected
     FROM requests r
     WHERE 1=1 $org_filter_clause";
 
     if ($stmt = mysqli_prepare($link, $count_sql)) {
-        
-        // --- FIX: Create an array of references for dynamic binding ---
-        // Argument 1: The prepared statement object ($stmt)
-        // Argument 2: The type string ("s" + dynamic integer types $types)
-        $bind_params = [$stmt, "s$types", &$current_review_status];
-        
-        // Add all dynamic parameters by reference
-        foreach ($params as $key => $value) {
-            // We need to use the $params array elements by reference
-            $bind_params[] = &$params[$key];
+
+        // Bind organization user_id parameters only if present (Adviser/Dean filter)
+        if (!empty($types) && !empty($params)) {
+            // Build array of references for call_user_func_array
+            $bind_names = [];
+            $bind_names[] = $types; // e.g. "ii..." depending on number of params
+            foreach ($params as $key => $val) {
+                $bind_names[] = &$params[$key];
+            }
+            call_user_func_array('mysqli_stmt_bind_param', array_merge([$stmt], $bind_names));
         }
-        
-        // This dynamic binding requires call_user_func_array
-        call_user_func_array('mysqli_stmt_bind_param', $bind_params);
-        // -----------------------------------------------------------------
-        
+
         if (mysqli_stmt_execute($stmt)) {
             mysqli_stmt_bind_result($stmt, $total_reviewable, $pending_count, $approved_count, $rejected_count);
             mysqli_stmt_fetch($stmt);
         } else {
-             // Debugging: If query fails, print error.
-             error_log("Admin Dashboard Query Failed: " . mysqli_error($link));
+            // Debugging: If query fails, print error.
+            error_log("Admin Dashboard Query Failed: " . mysqli_error($link));
         }
         mysqli_stmt_close($stmt);
     }

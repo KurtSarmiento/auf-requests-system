@@ -15,6 +15,7 @@ require_once "db_config.php";
 $current_role = $_SESSION["role"];
 $user_org_id = isset($_SESSION["org_id"]) ? (int)$_SESSION["org_id"] : 0;
 $request = null;
+$files = []; // <--- add this
 $error_message = $success_message = "";
 // $remark is initialized here to ensure the textarea doesn't error out if no POST data is present
 $remark = "";
@@ -284,6 +285,25 @@ if ($request_id > 0) {
     $error_message = "No request ID provided or user role error.";
 }
 
+// --- NEW: fetch attached files for this request so signatories can download them ---
+if ($request) {
+    $sql_files = "
+        SELECT file_id, original_file_name, file_name
+        FROM files
+        WHERE request_id = ?
+    ";
+    if ($stmt_files = mysqli_prepare($link, $sql_files)) {
+        mysqli_stmt_bind_param($stmt_files, "i", $request_id);
+        if (mysqli_stmt_execute($stmt_files)) {
+            $result_files = mysqli_stmt_get_result($stmt_files);
+            $files = mysqli_fetch_all($result_files, MYSQLI_ASSOC);
+        } else {
+            error_log("Failed to fetch files for request ID $request_id: " . mysqli_error($link));
+        }
+        mysqli_stmt_close($stmt_files);
+    }
+}
+
 // Close connection before HTML output
 mysqli_close($link);
 
@@ -380,9 +400,22 @@ function get_status_class($status) {
 
                     <div class="border-t pt-4">
                         <h3 class="text-xl font-semibold text-gray-800 mb-3">Supporting Documents (Files)</h3>
-                        <div class="bg-green-50 text-green-800 p-4 rounded-lg">
-                            <p class="text-sm">File upload functionality is now implemented in **request_create.php**. This area should show attached documents.</p>
-                        </div>
+                        <?php if (!empty($files)): ?>
+                            <div class="space-y-3">
+                                <?php foreach ($files as $file): ?>
+                                    <div class="flex items-center justify-between p-3 bg-white rounded-lg border border-indigo-200 shadow-sm">
+                                        <p class="text-sm text-gray-700 font-medium truncate"><?php echo htmlspecialchars($file['original_file_name']); ?></p>
+                                        <a href="download_file.php?fid=<?php echo (int)$file['file_id']; ?>" class="text-indigo-600 hover:text-indigo-800 text-sm font-semibold" target="_blank" rel="noopener noreferrer">
+                                            Download
+                                        </a>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php else: ?>
+                            <div class="bg-green-50 text-green-800 p-4 rounded-lg">
+                                <p class="text-sm">No supporting documents attached to this request.</p>
+                            </div>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>
