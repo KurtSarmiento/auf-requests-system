@@ -1,4 +1,4 @@
-<?php
+ <?php
 // Define database credentials
 // NOTE: These are default XAMPP settings. If you changed your MySQL password, update it here.
 define('DB_SERVER', 'localhost');

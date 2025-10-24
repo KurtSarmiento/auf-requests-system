@@ -42,7 +42,11 @@ $sql = "
     SELECT 
         r.*, 
         u.full_name AS submitted_by_name, 
-        o.org_name
+        o.org_name,
+        r.adviser_remark,   /* <-- NEW: FETCH REMARK COLUMNS */
+        r.dean_remark,      /* <-- NEW: FETCH REMARK COLUMNS */
+        r.osafa_remark,     /* <-- NEW: FETCH REMARK COLUMNS */
+        r.afo_remark        /* <-- NEW: FETCH REMARK COLUMNS */
     FROM 
         requests r
     JOIN 
@@ -61,6 +65,9 @@ if ($stmt = mysqli_prepare($link, $sql)) {
     if ($is_officer) {
         mysqli_stmt_bind_param($stmt, "ii", $request_id, $org_id); // 'i' for request_id, 'i' for org_id
     } else {
+        // If the user is an admin viewing (not Officer), no org_id filter is applied.
+        // NOTE: In a perfect system, admins (Adviser/Dean etc.) would use admin_review.php,
+        // but this handles admins viewing this file without the org_id constraint.
         mysqli_stmt_bind_param($stmt, "i", $request_id);
     }
 
@@ -82,6 +89,9 @@ if ($stmt = mysqli_prepare($link, $sql)) {
 
 // --- 2. Fetch Attached Files (only if request was found) ---
 if ($request) {
+    // SECURITY NOTE: This still uses a direct link to the uploads folder in the HTML below. 
+    // It should be changed to point to a secure gateway script (e.g., download_file.php)
+    // as previously advised, to prevent unauthorized file access.
     $sql_files = "
         SELECT 
             file_id, original_file_name, file_name
@@ -226,23 +236,33 @@ if (!$request && !$error_message) {
 
                 <div class="info-box border-l-4 border-gray-300 bg-gray-50">
                     <h3 class="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">Approval Flow</h3>
-                    <div class="space-y-3">
+                    <div class="space-y-4">
                         <?php 
                         $signatories = [
-                            'Adviser' => 'adviser_status',
-                            'Dean' => 'dean_status',
-                            'OSAFA Head' => 'osafa_status',
-                            'AFO Head' => 'afo_status'
+                            'Adviser' => ['status_col' => 'adviser_status', 'remark_col' => 'adviser_remark'],
+                            'Dean' => ['status_col' => 'dean_status', 'remark_col' => 'dean_remark'],
+                            'OSAFA Head' => ['status_col' => 'osafa_status', 'remark_col' => 'osafa_remark'],
+                            'AFO Head' => ['status_col' => 'afo_status', 'remark_col' => 'afo_remark']
                         ];
                         
-                        foreach ($signatories as $role_name => $col_name): 
-                            $status = htmlspecialchars($request[$col_name]);
+                        foreach ($signatories as $role_name => $data): 
+                            $status = htmlspecialchars($request[$data['status_col']]);
+                            $remark = htmlspecialchars($request[$data['remark_col']] ?? '');
                         ?>
-                            <div class="flex justify-between items-center text-sm">
-                                <p class="font-medium text-gray-700"><?php echo $role_name; ?></p>
-                                <span class="status-pill <?php echo get_status_class($status); ?>">
-                                    <?php echo $status; ?>
-                                </span>
+                            <div class="border-b border-gray-200 pb-3">
+                                <div class="flex justify-between items-center text-sm">
+                                    <p class="font-medium text-gray-700"><?php echo $role_name; ?></p>
+                                    <span class="status-pill <?php echo get_status_class($status); ?>">
+                                        <?php echo $status; ?>
+                                    </span>
+                                </div>
+                                
+                                <?php if (!empty($remark) && $status !== 'Pending'): ?>
+                                    <div class="mt-2 p-3 text-xs bg-indigo-50 border-l-4 border-indigo-400 rounded-lg text-gray-700">
+                                        <p class="font-semibold mb-1">Comment:</p>
+                                        <p><?php echo nl2br($remark); ?></p>
+                                    </div>
+                                <?php endif; ?>
                             </div>
                         <?php endforeach; ?>
                         

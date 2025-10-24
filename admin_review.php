@@ -16,6 +16,8 @@ $current_role = $_SESSION["role"];
 $user_org_id = isset($_SESSION["org_id"]) ? (int)$_SESSION["org_id"] : 0;
 $request = null;
 $error_message = $success_message = "";
+// $remark is initialized here to ensure the textarea doesn't error out if no POST data is present
+$remark = "";
 $request_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 
 // Determine the SQL column names corresponding to the current user's role.
@@ -39,86 +41,113 @@ if (!$status_column) {
 // --- 1. Handle Form Submission (Decision) ---
 if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
     $decision = trim($_POST['decision'] ?? ''); // 'Approved' or 'Rejected'
-    // NOTE: Comment is not being processed as there is no corresponding DB column.
+    $remark = trim($_POST['remark'] ?? ''); // Capture the remark content
     
     $valid_decisions = ['Approved', 'Rejected'];
 
-    if (!in_array($decision, $valid_decisions)) {
-        $error_message = "Invalid decision submitted.";
+    // Determine the correct database column to store this remark
+    $remark_column = match($current_role) {
+        'Adviser' => 'adviser_remark',
+        'Dean' => 'dean_remark',
+        'OSAFA' => 'osafa_remark',
+        'AFO' => 'afo_remark',
+        default => null,
+    };
+    
+    if (!$remark_column || !in_array($decision, $valid_decisions)) {
+        $error_message = "Invalid decision submitted or system error finding remark column.";
     } else {
         
-        mysqli_begin_transaction($link);
-        $success = true;
+        // Start transaction
+        if (!mysqli_begin_transaction($link)) {
+            $error_message = "Unable to start database transaction: " . mysqli_error($link);
+        } else {
+            try {
+                // --- A. Update current stage status AND ADD REMARK ---
+                $update_sql = "
+                    UPDATE requests 
+                    SET {$status_column} = ?, 
+                        {$remark_column} = ?,
+                        date_updated = NOW() 
+                    WHERE request_id = ?
+                ";
+                
+                if ($stmt = mysqli_prepare($link, $update_sql)) {
+                    // Binding: (s) for decision, (s) for remark, (i) for request_id
+                    if (!mysqli_stmt_bind_param($stmt, "ssi", $decision, $remark, $request_id)) {
+                        throw new Exception("Error binding parameters for update: " . mysqli_stmt_error($stmt));
+                    }
 
-        try {
-            // --- A. Update current stage status (No remark column being updated) ---
-            $update_sql = "
-                UPDATE requests 
-                SET {$status_column} = ?, 
-                    date_updated = NOW() 
-                WHERE request_id = ?
-            ";
-            
-            if ($stmt = mysqli_prepare($link, $update_sql)) {
-                // Binding: (s) for decision, (i) for request_id
-                if (!mysqli_stmt_bind_param($stmt, "si", $decision, $request_id)) {
-                    throw new Exception("Error binding parameters for update: " . mysqli_stmt_error($stmt));
-                }
-
-                if (!mysqli_stmt_execute($stmt)) {
-                    $error = mysqli_stmt_error($stmt);
+                    if (!mysqli_stmt_execute($stmt)) {
+                        $error = mysqli_stmt_error($stmt);
+                        mysqli_stmt_close($stmt);
+                        throw new Exception("Error executing update query: " . $error);
+                    }
                     mysqli_stmt_close($stmt);
-                    throw new Exception("Error executing update query: " . $error);
-                }
-                mysqli_stmt_close($stmt);
-            } else {
-                throw new Exception("Error preparing update statement: " . mysqli_error($link));
-            }
-            
-            // --- B. Update final/notification status based on decision and role ---
-            if ($success) {
-                $final_status_update = '';
-                $notification_status_update = '';
-
-                if ($decision === 'Rejected') {
-                    // Rejection at ANY stage sets final status to Rejected
-                    $final_status_update = 'Rejected';
-                    $notification_status_update = 'Rejected';
-                } elseif ($current_role === 'AFO') {
-                    // AFO Approval (Final Step)
-                    $final_status_update = 'Approved';
-                    $notification_status_update = 'Budget Available';
                 } else {
-                    // Approval at intermediary stage, advance notification to next stage
-                    $notification_status_update = $next_notification;
+                    throw new Exception("Error preparing update statement: " . mysqli_error($link));
                 }
-
-                $update_notifications_sql = "UPDATE requests SET ";
+                
+                // --- B. Update final/notification status based on decision and role ---
+                $updates = [];
                 $params = [];
                 $types = "";
 
-                if ($final_status_update) {
-                    $update_notifications_sql .= "final_status = ?";
-                    $params[] = $final_status_update;
+                if ($decision === 'Rejected') {
+                    // 1. Set global final statuses
+                    $updates[] = "final_status = ?";
+                    $params[] = 'Rejected';
+                    $types .= "s";
+                    
+                    $updates[] = "notification_status = ?";
+                    $params[] = 'Rejected';
+                    $types .= "s";
+                    
+                    // 2. Explicitly set ALL subsequent status columns to '-' 
+                    $roles_in_order = ['Adviser', 'Dean', 'OSAFA', 'AFO'];
+                    $role_status_map = [
+                        'Adviser' => 'adviser_status',
+                        'Dean' => 'dean_status',
+                        'OSAFA' => 'osafa_status',
+                        'AFO' => 'afo_status',
+                    ];
+                    
+                    $current_role_index = array_search($current_role, $roles_in_order);
+                    
+                    // Loop through all roles that follow the current one
+                    for ($i = $current_role_index + 1; $i < count($roles_in_order); $i++) {
+                        $subsequent_column = $role_status_map[$roles_in_order[$i]];
+                        $updates[] = "{$subsequent_column} = ?";
+                        $params[] = '-'; // Set subsequent statuses to '-'
+                        $types .= "s";
+                    }
+
+                } elseif ($current_role === 'AFO') {
+                    // AFO Approval (Final Step)
+                    $updates[] = "final_status = ?";
+                    $params[] = 'Approved';
+                    $types .= "s";
+                    
+                    $updates[] = "notification_status = ?";
+                    $params[] = 'Budget Available';
+                    $types .= "s";
+
+                } else {
+                    // Approval at intermediary stage, advance notification to next stage
+                    $updates[] = "notification_status = ?";
+                    $params[] = $next_notification;
                     $types .= "s";
                 }
 
-                if ($notification_status_update) {
-                    if ($types) $update_notifications_sql .= ", ";
-                    $update_notifications_sql .= "notification_status = ?";
-                    $params[] = $notification_status_update;
-                    $types .= "s";
-                }
-                
-                // Add WHERE clause and request_id
-                $update_notifications_sql .= " WHERE request_id = ?";
-                $params[] = $request_id;
-                $types .= "i";
+                if (!empty($updates)) {
+                    $update_notifications_sql = "UPDATE requests SET " . implode(", ", $updates) . " WHERE request_id = ?";
+                    $params[] = $request_id;
+                    $types .= "i";
 
-                if ($types !== "i") { // Only execute if there's something to update besides ID
                     if ($stmt = mysqli_prepare($link, $update_notifications_sql)) {
                         $bind_params = array_merge([$types], $params);
                         
+                        // This section is for dynamic parameter binding
                         $refs = [];
                         foreach ($bind_params as $key => &$value) {
                             $refs[$key] = &$bind_params[$key];
@@ -126,47 +155,35 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
 
                         // Use call_user_func_array for dynamic binding
                         if (!call_user_func_array('mysqli_stmt_bind_param', array_merge([$stmt], $refs))) {
-                            $success = false;
+                            throw new Exception("Error binding parameters for notification update: " . mysqli_stmt_error($stmt));
                         }
 
                         if (!mysqli_stmt_execute($stmt)) {
-                            $success = false;
+                            throw new Exception("Error executing notification update query: " . mysqli_stmt_error($stmt));
                         }
                         mysqli_stmt_close($stmt);
                     } else {
-                        $success = false;
+                        throw new Exception("Error preparing notification update statement: " . mysqli_error($link));
                     }
                 }
+
+                // Commit if we reached here without exception
+                if (!mysqli_commit($link)) {
+                    throw new Exception("Failed to commit transaction: " . mysqli_error($link));
+                }
+
+                $success_message = "Decision recorded successfully.";
+            } catch (Exception $e) {
+                // Rollback on any exception and show the error
+                mysqli_rollback($link);
+                $error_message = "Transaction failed: " . $e->getMessage();
             }
-
-
-        } catch (Exception $e) {
-            $success = false;
-            // Capture the specific exception message
-            $error_message = $e->getMessage(); 
-        }
-
-        // --- C. Commit or Rollback Transaction ---
-        if ($success) {
-            mysqli_commit($link);
-            // Redirect to the list page after successful submission
-            header("location: admin_request_list.php?success=1"); 
-            exit;
-        } else {
-            mysqli_rollback($link);
-            // If an exception was caught, use that message; otherwise, use the generic message
-            if (empty($error_message)) {
-                 $error_message = "Failed to update request status in the database. Please try again. Transaction rolled back. " . mysqli_error($link);
-            } else {
-                 $error_message = "Failed to update request status in the database. Transaction rolled back. **DB ERROR**: " . $error_message;
-            }
-           
         }
     }
 }
 
 
-// --- 2. Fetch Request Details ---
+// --- 2. Fetch Request Details (includes the critical rejection check) ---
 if ($request_id > 0) {
     $sql = "
         SELECT 
@@ -220,21 +237,35 @@ if ($request_id > 0) {
             $result = mysqli_stmt_get_result($stmt);
             if (mysqli_num_rows($result) == 1) {
                 $request = mysqli_fetch_assoc($result);
+                // If the POST failed, we try to re-fetch the remark so the user doesn't lose it
+                if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['remark'])) {
+                    $remark = trim($_POST['remark']);
+                }
 
-                // Check the status of the PREVIOUS signatory if the current request is 'Pending'
-                if ($request[$status_column] === 'Pending' && $current_role !== 'Adviser') {
-                    $previous_status_col = match($current_role) {
-                        'Dean' => 'adviser_status',
-                        'OSAFA' => 'dean_status',
-                        'AFO' => 'osafa_status',
-                        default => null,
-                    };
+                // --- CRITICAL NEW LOGIC: Check Previous Signatory's Status ---
+                $previous_status_col = match($current_role) {
+                    'Dean' => 'adviser_status',
+                    'OSAFA' => 'dean_status',
+                    'AFO' => 'osafa_status',
+                    default => null, // Adviser has no previous signatory
+                };
 
-                    if ($previous_status_col && $request[$previous_status_col] !== 'Approved') {
-                        $error_message = "This request is not yet ready for your review. It must first be **Approved** by the previous signatory.";
+                if ($previous_status_col) {
+                    $previous_status = $request[$previous_status_col];
+                    
+                    if ($previous_status === 'Rejected') {
+                        // Case 1: Rejected by previous party
+                        $error_message = "This request was **Rejected** by the previous signatory and is no longer available for your review.";
+                        $request = null; // Block the request details from being displayed
+                    }
+                    elseif ($request[$status_column] === 'Pending' && $previous_status !== 'Approved') {
+                        // Case 2: Not yet approved by previous party (and not rejected)
+                        $previous_role_name = str_replace(['_status', 'adviser', 'dean', 'osafa'], ['', 'Adviser', 'Dean', 'OSAFA'], $previous_status_col);
+                        $error_message = "This request is not yet ready for your review. It must first be **Approved** by the **" . ucfirst($previous_role_name) . "**.";
                         $request = null; // Prevent display
                     }
                 }
+                // --- END CRITICAL NEW LOGIC ---
 
             } else {
                 // Improved message to hint at permission issues
@@ -262,6 +293,9 @@ function get_status_class($status) {
         'Approved', 'Budget Available' => 'bg-green-600 text-white font-bold',
         'Rejected' => 'bg-red-600 text-white font-bold',
         'Awaiting AFO Approval' => 'bg-yellow-600 text-white font-bold',
+        // --- ADD THIS LINE ---
+        '-' => 'bg-gray-400 text-white font-bold', 
+        // ---------------------
         default => 'bg-blue-600 text-white font-bold',
     };
 }
@@ -304,6 +338,13 @@ function get_status_class($status) {
             <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-8 rounded-lg" role="alert">
                 <p class="font-bold">Error</p>
                 <p><?php echo $error_message; ?></p>
+            </div>
+        <?php endif; ?>
+
+        <?php if ($success_message): ?>
+            <div class="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 mb-8 rounded-lg" role="alert">
+                <p class="font-bold">Success</p>
+                <p><?php echo $success_message; ?></p>
             </div>
         <?php endif; ?>
 
@@ -410,10 +451,14 @@ function get_status_class($status) {
                                 </div>
                             </div>
                             
-                            <div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 p-3 rounded-lg text-sm">
-                                <strong>Note:</strong> Comments and reasons are not being recorded because your database table does not have a dedicated remark/comment column for this stage. Only the status is updated.
+                            <div class="mb-4">
+                                <label for="remark" class="block text-sm font-medium text-gray-700 mb-2">
+                                    Remarks / Reason for Decision <span class="text-xs text-gray-500">(Required for rejection, recommended for approval)</span>
+                                </label>
+                                <textarea id="remark" name="remark" rows="4" 
+                                        class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition duration-150"
+                                        placeholder="Enter your detailed justification for the decision..."><?php echo htmlspecialchars($remark); ?></textarea>
                             </div>
-                            <input type="hidden" name="comment" value=""> 
 
                             <button type="submit" 
                                         class="w-full bg-indigo-600 text-white py-3 rounded-lg text-lg font-semibold hover:bg-indigo-700 transition duration-150 shadow-md transform hover:scale-[1.01] active:scale-95">
