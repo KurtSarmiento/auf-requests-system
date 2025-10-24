@@ -52,7 +52,6 @@ $total_reviewable = 0;
 $pending_count = 0;
 $approved_count = 0;
 $rejected_count = 0;
-$forwarded_count = 0;
 
 if (!empty($status_column)) {
     // --- Determine if the Admin is an Adviser/Dean (needs organization filtering) ---
@@ -106,8 +105,7 @@ if (!empty($status_column)) {
         COUNT(r.request_id) AS total_reviewable,
         SUM(CASE WHEN r.notification_status = ? THEN 1 ELSE 0 END) AS pending,
         SUM(CASE WHEN r.$status_column = 'Approved' THEN 1 ELSE 0 END) AS approved,
-        SUM(CASE WHEN r.$status_column = 'Rejected' THEN 1 ELSE 0 END) AS rejected,
-        SUM(CASE WHEN r.$status_column = 'Forwarded' THEN 1 ELSE 0 END) AS forwarded
+        SUM(CASE WHEN r.$status_column = 'Rejected' THEN 1 ELSE 0 END) AS rejected
     FROM requests r
     WHERE 1=1 $org_filter_clause";
 
@@ -121,7 +119,6 @@ if (!empty($status_column)) {
         // Add all dynamic parameters by reference
         foreach ($params as $key => $value) {
             // We need to use the $params array elements by reference
-            // Since $params holds simple integers (user_ids), we reference them directly.
             $bind_params[] = &$params[$key];
         }
         
@@ -130,7 +127,7 @@ if (!empty($status_column)) {
         // -----------------------------------------------------------------
         
         if (mysqli_stmt_execute($stmt)) {
-            mysqli_stmt_bind_result($stmt, $total_reviewable, $pending_count, $approved_count, $rejected_count, $forwarded_count);
+            mysqli_stmt_bind_result($stmt, $total_reviewable, $pending_count, $approved_count, $rejected_count);
             mysqli_stmt_fetch($stmt);
         } else {
              // Debugging: If query fails, print error.
@@ -169,7 +166,7 @@ start_page("Admin Dashboard", $role, $full_name);
 </div>
 
 <!-- Status Overview Cards -->
-<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
     
     <!-- Pending Review (CRITICAL - Red/Orange Accent) -->
     <div class="bg-white p-6 rounded-xl shadow-lg border-2 border-red-400 flex flex-col items-start">
@@ -185,13 +182,6 @@ start_page("Admin Dashboard", $role, $full_name);
         <p class="text-xs text-gray-500 mt-2">Total requests approved in your stage</p>
     </div>
     
-    <!-- Forwarded (Neutral Blue Accent) -->
-    <div class="bg-white p-6 rounded-xl shadow-lg border-2 border-blue-400 flex flex-col items-start">
-        <p class="text-sm font-semibold text-blue-600 uppercase tracking-wider">Forwarded to Next Step</p>
-        <p class="text-5xl font-extrabold text-blue-700 mt-2"><?php echo $forwarded_count; ?></p>
-        <p class="text-xs text-gray-500 mt-2">Requests moved past your approval</p>
-    </div>
-
     <!-- Rejected (Neutral Gray) -->
     <div class="bg-white p-6 rounded-xl shadow-lg border-2 border-gray-100 flex flex-col items-start">
         <p class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Rejected by You</p>
