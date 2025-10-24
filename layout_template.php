@@ -39,7 +39,7 @@ function start_page($title, $role, $full_name) {
 
                 <div class="flex items-center space-x-3 text-sm">
                     <span class="font-light">
-                        Hello, <b><?php echo htmlspecialchars($full_name); ?></b> (<?php echo htmlspecialchars($role); ?>)
+                        Hello, <b><?php echo htmlspecialchars($full_name); ?></b>
                     </span>
                     <a href="logout.php" class="bg-teal-500 hover:bg-teal-600 text-white px-3 py-1 rounded-lg text-xs font-semibold transition duration-150 shadow-md">
                         Logout

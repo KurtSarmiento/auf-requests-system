@@ -170,7 +170,7 @@ mysqli_close($link);
             <a href="admin_dashboard.php" class="hover:text-indigo-200 transition duration-150">Dashboard</a>
             <a href="admin_request_list.php" class="text-yellow-300 font-bold transition duration-150">Review Queue</a>
             <span class="text-sm font-light">
-                Logged in as: <b><?php echo htmlspecialchars($_SESSION["full_name"]); ?></b> (<?php echo htmlspecialchars($current_role); ?>)
+                Logged in as: <b><?php echo htmlspecialchars($_SESSION["full_name"]); ?></b>
             </span>
             <a href="logout.php" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-lg transition duration-150">Logout</a>
         </div>
