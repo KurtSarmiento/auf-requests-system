@@ -32,17 +32,20 @@ if ($stmt = mysqli_prepare($link, $org_sql)) {
 }
 
 // --- Fetch Request Counts ---
+// NOTE: Count "final approved" as requests whose notification_status indicates final approval.
+// The AFO step sets notification_status = 'Budget Available', so include that value.
+// For pending, count any notification_status that starts with 'Awaiting ' to avoid mismatches.
 $count_sql = "SELECT 
     COUNT(request_id) AS total,
-    SUM(CASE WHEN notification_status = 'Awaiting Adviser Review' OR notification_status = 'Awaiting Dean Review' OR notification_status = 'Awaiting OSAFA Review' OR notification_status = 'Awaiting AFO Review' THEN 1 ELSE 0 END) AS pending,
-    SUM(CASE WHEN notification_status = 'Final Approved' THEN 1 ELSE 0 END) AS approved
+    SUM(CASE WHEN notification_status LIKE 'Awaiting %' THEN 1 ELSE 0 END) AS pending,
+    SUM(CASE WHEN notification_status IN ('Final Approved', 'Budget Available') THEN 1 ELSE 0 END) AS approved
 FROM requests 
 WHERE user_id = ?";
 
 if ($stmt = mysqli_prepare($link, $count_sql)) {
     mysqli_stmt_bind_param($stmt, "i", $user_id);
     if (mysqli_stmt_execute($stmt)) {
-        // Renamed variable to match SQL aliases for clarity
+        // Bind results to our variables
         mysqli_stmt_bind_result($stmt, $request_count, $pending_count, $approved_count);
         mysqli_stmt_fetch($stmt);
     }
@@ -110,7 +113,7 @@ start_page("Officer Dashboard", $role, $full_name);
     <div class="bg-white p-6 rounded-xl shadow-lg border-2 border-gray-100 flex flex-col items-start">
         <p class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Other Closed</p>
         <p class="text-5xl font-extrabold text-gray-500 mt-2"><?php echo $request_count - $pending_count - $approved_count; ?></p>
-        <p class="text-xs text-gray-500 mt-2">Completed or Rejected</p>
+        <p class="text-xs text-gray-500 mt-2">Rejected</p>
     </div>
 
 </div>
