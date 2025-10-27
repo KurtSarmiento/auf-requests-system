@@ -28,11 +28,10 @@ function start_page($title, $role, $full_name) {
         <div class="container mx-auto flex justify-between items-center">
             <h1 class="text-2xl font-extrabold tracking-tight">AUF Request System</h1>
             <div class="flex items-center space-x-6">
-                <?php if ($role === 'Officer'): ?>
-                    <a href="officer_dashboard.php" class="hover:text-blue-300 transition duration-150 font-medium">Dashboard</a>
-                    <a href="request_create.php" class="hover:text-blue-300 transition duration-150 font-medium">New Request</a>
-                    <a href="request_list.php" class="hover:text-blue-300 transition duration-150 font-medium">My Submissions</a>
-                <?php else: // Signatory Roles ?>
+                <?php if ($role === 'Officer'): // Officer Role ?>
+    <a href="officer_dashboard.php" class="hover:text-blue-300 transition duration-150 font-medium">Dashboard</a>
+    <a href="request_list.php" class="hover:text-blue-300 transition duration-150 font-medium">My Submissions</a>
+<?php else: // Signatory Roles ?>
                     <a href="admin_dashboard.php" class="hover:text-blue-300 transition duration-150 font-medium">Admin Dashboard</a>
                     <a href="admin_request_list.php" class="hover:text-blue-300 transition duration-150 font-medium">Review Queue</a>
                 <?php endif; ?>

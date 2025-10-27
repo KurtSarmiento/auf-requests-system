@@ -19,6 +19,18 @@ $status_column = '';
 $current_review_status = '';
 $role_description = '';
 
+// Define roles that review the 'requests' table (Funding/Standard requests)
+$funding_review_roles = ['Adviser', 'Dean', 'OSAFA', 'AFO'];
+// Define roles that review the 'venue_requests' table ONLY (or other tables)
+// These roles do NOT have a status column in the 'requests' table.
+$venue_only_roles = [
+    'Admin Services',
+    'CFDO',
+    'VP for Academic Affairs',
+    'VP for Administration'
+];
+
+
 switch ($role) {
     case 'Adviser':
         $status_column = 'adviser_status';
@@ -27,6 +39,9 @@ switch ($role) {
         break;
     case 'Dean':
         $status_column = 'dean_status';
+        // IMPORTANT: Venue requests use 'Awaiting Dean Approval' for the Dean's review,
+        // while funding requests use 'Awaiting Dean Review'. We'll primarily use the
+        // funding request one for the role logic here, and adjust the venue query.
         $current_review_status = 'Awaiting Dean Review';
         $role_description = 'College Dean';
         break;
@@ -40,6 +55,28 @@ switch ($role) {
         $current_review_status = 'Awaiting AFO Review';
         $role_description = 'AFO Head';
         break;
+    // --- START: Roles that DO NOT have status columns on the 'requests' table ---
+    case 'Admin Services': // Assuming Admin Services role
+        $status_column = 'admin_services_status'; // Only exists on venue_requests table
+        $current_review_status = 'Awaiting Admin Services Approval'; // Used for Venue
+        $role_description = 'Admin Services';
+        break;
+    case 'CFDO': // Assuming CFDO role
+        $status_column = 'cfdo_status'; // Only exists on venue_requests table
+        $current_review_status = 'Awaiting CFDO Approval'; // Used for Venue
+        $role_description = 'CFDO';
+        break;
+    case 'VP for Academic Affairs': // Assuming VP for Academic Affairs role
+        $status_column = 'VPAcad_status'; // Only exists on venue_requests table
+        $current_review_status = 'Awaiting VP for Academic Affairs Approval'; // Used for Venue
+        $role_description = 'VP for Academic Affairs';
+        break;
+    case 'VP for Administration': // Assuming VP for Administration role
+        $status_column = 'VPAdmin_status'; // Only exists on venue_requests table
+        $current_review_status = 'Awaiting VP for Administration Approval'; // Used for Venue
+        $role_description = 'VP for Administration';
+        break;
+    // --- END: Roles that DO NOT have status columns on the 'requests' table ---
     default:
         // Handle unexpected roles (shouldn't happen if user table is clean)
         $status_column = '';
@@ -70,8 +107,8 @@ if (!empty($status_column)) {
     $params = [];
     $types = '';
 
+    // Check if the current role is one that needs organization filtering
     if ($role === 'Adviser' || $role === 'Dean') {
-        // Advisers and Deans only see requests from organizations they are associated with.
         $org_id_sql = "SELECT org_id FROM users WHERE user_id = ?";
         if ($stmt = mysqli_prepare($link, $org_id_sql)) {
             mysqli_stmt_bind_param($stmt, "i", $user_id);
@@ -88,7 +125,7 @@ if (!empty($status_column)) {
                 mysqli_stmt_bind_param($stmt_org, "i", $org_id);
                 mysqli_stmt_execute($stmt_org);
                 $result_org = mysqli_stmt_get_result($stmt_org);
-                
+
                 $officer_ids = [];
                 while ($row = mysqli_fetch_assoc($result_org)) {
                     $officer_ids[] = $row['user_id'];
@@ -96,58 +133,148 @@ if (!empty($status_column)) {
                 mysqli_stmt_close($stmt_org);
 
                 if (!empty($officer_ids)) {
-                    // Create WHERE clause for multiple user IDs
                     $placeholders = implode(',', array_fill(0, count($officer_ids), '?'));
                     $org_filter_clause = "AND r.user_id IN ($placeholders)";
-                    
-                    // Add all officer IDs to the parameters array
                     $params = array_merge($params, $officer_ids);
-                    // Add type strings ('i') for each parameter
                     $types = str_repeat('i', count($officer_ids));
                 }
             }
         }
     }
-    
-    // --- Fetch Request Counts for Reviewer ---
-    // Build pending condition: role's status must be 'Pending' AND (if applicable) previous signatory must have 'Approved'
-    $pending_condition = "r.{$status_column} = 'Pending'";
-    if (!empty($previous_status_column)) {
-        $pending_condition .= " AND r.{$previous_status_column} = 'Approved'";
+
+    // --- 2a. Funding/Standard Requests Count ---
+    if (in_array($role, $funding_review_roles)) {
+        $pending_condition = "r.{$status_column} = 'Pending'";
+        if (!empty($previous_status_column)) {
+            $pending_condition .= " AND r.{$previous_status_column} = 'Approved'";
+        }
+
+        $count_sql = "SELECT 
+            COUNT(r.request_id) AS total_reviewable,
+            SUM(CASE WHEN {$pending_condition} THEN 1 ELSE 0 END) AS pending,
+            SUM(CASE WHEN r.{$status_column} = 'Approved' THEN 1 ELSE 0 END) AS approved,
+            SUM(CASE WHEN r.{$status_column} = 'Rejected' THEN 1 ELSE 0 END) AS rejected
+        FROM requests r
+        WHERE 1=1 $org_filter_clause";
+
+        if ($stmt = mysqli_prepare($link, $count_sql)) {
+            if (!empty($types) && !empty($params)) {
+                $bind_names = [];
+                $bind_names[] = $types;
+                foreach ($params as $key => $val) {
+                    $bind_names[] = &$params[$key];
+                }
+                call_user_func_array('mysqli_stmt_bind_param', array_merge([$stmt], $bind_names));
+            }
+
+            if (mysqli_stmt_execute($stmt)) {
+                mysqli_stmt_bind_result($stmt, $total_reviewable, $pending_count, $approved_count, $rejected_count);
+                mysqli_stmt_fetch($stmt);
+            }
+            mysqli_stmt_close($stmt);
+        }
     }
 
-    $count_sql = "SELECT 
-        COUNT(r.request_id) AS total_reviewable,
-        SUM(CASE WHEN {$pending_condition} THEN 1 ELSE 0 END) AS pending,
-        SUM(CASE WHEN r.{$status_column} = 'Approved' THEN 1 ELSE 0 END) AS approved,
-        SUM(CASE WHEN r.{$status_column} = 'Rejected' THEN 1 ELSE 0 END) AS rejected
-    FROM requests r
-    WHERE 1=1 $org_filter_clause";
+    // --- 2b. VENUE REQUESTS COUNT (Counts Pending, Approved, and Rejected reliably) ---
 
-    if ($stmt = mysqli_prepare($link, $count_sql)) {
+    // Build organization clause for venue table correctly (uses vr.user_id)
+    $org_filter_clause_venue = '';
+$venue_bind_params = [];
+$venue_bind_types = '';
 
-        // Bind organization user_id parameters only if present (Adviser/Dean filter)
-        if (!empty($types) && !empty($params)) {
-            // Build array of references for call_user_func_array
-            $bind_names = [];
-            $bind_names[] = $types; // e.g. "ii..." depending on number of params
-            foreach ($params as $key => $val) {
-                $bind_names[] = &$params[$key];
-            }
-            call_user_func_array('mysqli_stmt_bind_param', array_merge([$stmt], $bind_names));
-        }
-
-        if (mysqli_stmt_execute($stmt)) {
-            mysqli_stmt_bind_result($stmt, $total_reviewable, $pending_count, $approved_count, $rejected_count);
-            mysqli_stmt_fetch($stmt);
-        } else {
-            // Debugging: If query fails, print error.
-            error_log("Admin Dashboard Query Failed: " . mysqli_error($link));
-        }
-        mysqli_stmt_close($stmt);
+if ($role === 'Adviser' || $role === 'Dean') {
+    if (!empty($params)) {
+        $placeholders_v = implode(',', array_fill(0, count($params), '?'));
+        $org_filter_clause_venue = "AND vr.user_id IN ($placeholders_v)";
+        $venue_bind_params = $params;
+        $venue_bind_types = $types;
     }
 }
 
+// ✅ Use COALESCE for full safety — ensures real 0 values, not NULL
+$venue_sql = "
+    SELECT
+        COALESCE(COUNT(vr.venue_request_id), 0) AS total_reviewable,
+        COALESCE(SUM(
+            CASE
+                WHEN (
+                    vr.notification_status LIKE 'Awaiting%' OR
+                    vr.admin_services_status = 'Pending' OR
+                    vr.cfdo_status = 'Pending' OR
+                    vr.vp_acad_status = 'Pending' OR
+                    vr.vp_admin_status = 'Pending'
+                ) THEN 1 ELSE 0 END
+        ), 0) AS pending,
+        COALESCE(SUM(
+            CASE
+                WHEN (
+                    vr.notification_status LIKE '%Approved%' OR
+                    vr.admin_services_status = 'Approved' OR
+                    vr.cfdo_status = 'Approved' OR
+                    vr.vp_acad_status = 'Approved' OR
+                    vr.vp_admin_status = 'Approved' OR
+                    vr.final_status = 'Approved'
+                ) THEN 1 ELSE 0 END
+        ), 0) AS approved,
+        COALESCE(SUM(
+            CASE
+                WHEN (
+                    vr.notification_status LIKE '%Rejected%' OR
+                    vr.admin_services_status = 'Rejected' OR
+                    vr.cfdo_status = 'Rejected' OR
+                    vr.vp_acad_status = 'Rejected' OR
+                    vr.vp_admin_status = 'Rejected' OR
+                    vr.final_status = 'Rejected'
+                ) THEN 1 ELSE 0 END
+        ), 0) AS rejected
+    FROM venue_requests vr
+    WHERE 1=1 $org_filter_clause_venue
+";
+
+// Initialize counts to zero
+$venue_total = 0;
+$venue_pending_count = 0;
+$venue_approved_count = 0;
+$venue_rejected_count = 0;
+
+// Prepare + bind + execute
+if ($stmt_venue = mysqli_prepare($link, $venue_sql)) {
+    if (!empty($venue_bind_params) && !empty($venue_bind_types)) {
+        $bind_refs = [];
+        $bind_refs[] = $venue_bind_types;
+        foreach ($venue_bind_params as $k => $v) {
+            $bind_refs[] = &$venue_bind_params[$k];
+        }
+        call_user_func_array('mysqli_stmt_bind_param', array_merge([$stmt_venue], $bind_refs));
+    }
+
+    mysqli_stmt_execute($stmt_venue);
+    mysqli_stmt_bind_result($stmt_venue, $v_total, $v_pending, $v_approved, $v_rejected);
+
+    // ✅ Fetch safely (assign defaults if nothing is fetched)
+    if (mysqli_stmt_fetch($stmt_venue)) {
+        $venue_total = (int)$v_total;
+        $venue_pending_count = (int)$v_pending;
+        $venue_approved_count = (int)$v_approved;
+        $venue_rejected_count = (int)$v_rejected;
+    } else {
+        $venue_total = 0;
+        $venue_pending_count = 0;
+        $venue_approved_count = 0;
+        $venue_rejected_count = 0;
+    }
+
+    mysqli_stmt_close($stmt_venue);
+}
+
+// ✅ Add to overall totals (with explicit int casting)
+$total_reviewable += (int)$venue_total;
+$pending_count += (int)$venue_pending_count;
+$approved_count += (int)$venue_approved_count;
+$rejected_count += (int)$venue_rejected_count;
+}
+
+// Close DB connection
 mysqli_close($link);
 
 // Start the page using the template function
@@ -155,20 +282,16 @@ start_page("Admin Dashboard", $role, $full_name);
 
 ?>
 
-<!-- Dashboard Content -->
 <h2 class="text-5xl font-extrabold text-gray-900 mb-2">Welcome Back, <?php echo htmlspecialchars(explode(' ', $full_name)[0]); ?>!</h2>
 <p class="text-xl text-gray-600 mb-10">
     Review Dashboard for the <span class="font-bold text-blue-700"><?php echo htmlspecialchars($role_description); ?></span>.
 </p>
 
-<!-- Quick Action Buttons -->
 <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12 max-w-2xl">
-    <!-- View Review Queue (Primary Action) -->
     <a href="admin_request_list.php" class="bg-blue-600 hover:bg-blue-700 text-white p-8 rounded-xl shadow-2xl transition duration-300 transform hover:scale-[1.03] flex flex-col justify-center">
         <h3 class="text-3xl font-bold mb-1">View Review Queue</h3>
         <p class="text-sm opacity-90 font-light">See all requests currently pending your action.</p>
     </a>
-    <!-- Total Requests Managed (Info Card) -->
     <div class="bg-sky-600 text-white p-8 rounded-xl shadow-xl flex flex-col justify-center">
         <h3 class="text-xl font-semibold mb-1 opacity-80">Your Role:</h3>
         <p class="text-3xl font-extrabold"><?php echo htmlspecialchars($role_description); ?></p>
@@ -176,24 +299,20 @@ start_page("Admin Dashboard", $role, $full_name);
     </div>
 </div>
 
-<!-- Status Overview Cards -->
 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-    
-    <!-- Pending Review (CRITICAL - Red/Orange Accent) -->
+
     <div class="bg-white p-6 rounded-xl shadow-lg border-2 border-red-400 flex flex-col items-start">
         <p class="text-sm font-semibold text-red-600 uppercase tracking-wider">Pending Your Review</p>
         <p class="text-5xl font-extrabold text-red-700 mt-2"><?php echo $pending_count; ?></p>
         <p class="text-xs text-gray-500 mt-2">Requires immediate action</p>
     </div>
 
-    <!-- Approved (Positive Blue/Green Accent) -->
     <div class="bg-white p-6 rounded-xl shadow-lg border-2 border-teal-400 flex flex-col items-start">
         <p class="text-sm font-semibold text-teal-600 uppercase tracking-wider">Approved by You</p>
         <p class="text-5xl font-extrabold text-teal-700 mt-2"><?php echo $approved_count; ?></p>
         <p class="text-xs text-gray-500 mt-2">Total requests approved in your stage</p>
     </div>
-    
-    <!-- Rejected (Neutral Gray) -->
+
     <div class="bg-white p-6 rounded-xl shadow-lg border-2 border-gray-100 flex flex-col items-start">
         <p class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Rejected by You</p>
         <p class="text-5xl font-extrabold text-gray-500 mt-2"><?php echo $rejected_count; ?></p>
@@ -201,7 +320,6 @@ start_page("Admin Dashboard", $role, $full_name);
     </div>
 
 </div>
-
 
 <?php
 // End the page using the template function

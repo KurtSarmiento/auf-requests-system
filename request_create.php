@@ -36,8 +36,52 @@ if (!empty($_SESSION['org_name'])) {
 $title = $type = $amount_str = $description = "";
 $title_err = $type_err = $amount_err = $description_err = $file_err = $general_err = "";
 
+// Variables for file handling
+$uploaded_file_name = null; // The unique filename on the server
+$original_file_name = null; // The file's original name
+$uploaded_file_path = null; // The full path on the server
+$file_upload_success = false;
+
 // Directory for file uploads (Must be created manually)
 $upload_dir = __DIR__ . "/uploads/"; 
+
+// --- MODIFIED LOGIC: GET AND VALIDATE REQUEST TYPE FROM URL ---
+$allowed_financial_types = ['Budget Request', 'Liquidation Report', 'Reimbursement'];
+$allowed_all_types = array_merge($allowed_financial_types, ['Venue Request']); // Include the new type
+
+// Map the short URL parameter to the full database type name
+$type_map = [
+    'Budget' => 'Budget Request',
+    'Liquidation' => 'Liquidation Report',
+    'Reimbursement' => 'Reimbursement',
+    'Venue' => 'Venue Request' // ADDED: Map for venue requests
+];
+$default_type = 'Budget Request';
+$type_param = ''; // Initialize variable to hold the raw URL parameter
+
+if (isset($_GET['type'])) {
+    $type_param = trim($_GET['type']);
+    $mapped_type = $type_map[$type_param] ?? $type_param;
+    
+    if (in_array($mapped_type, $allowed_all_types)) { // Check against all types
+        $type = $mapped_type; // Set $type for form display
+    } else {
+        // If an invalid type is specified, default and show error
+        $type = $default_type; 
+        $type_err = "Invalid request type specified. Defaulting to {$default_type}.";
+    }
+} else {
+    // If no parameter is provided, default
+    $type = $default_type;
+}
+
+// *** CRITICAL REDIRECTION FOR VENUE REQUESTS ***
+if ($type === 'Venue Request') {
+    // If the user attempts to load the venue request on this page, redirect to the correct form.
+    // Use the raw parameter in the redirection to maintain the URL structure.
+    header("location: request_venue.php" . (!empty($type_param) ? "?type=" . urlencode($type_param) : ""));
+    exit;
+}
 
 // Helper: convert php ini size like "8M" to bytes
 function phpSizeToBytes(string $size): int {
@@ -83,10 +127,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             $title = trim($raw_title);
         }
         
-        if (empty(trim($raw_type))) {
-            $type_err = "Please select a request type.";
+        // Use the hidden field value for submission type
+        // MODIFIED: Check against the specific financial types
+        if (empty(trim($raw_type)) || !in_array(trim($raw_type), $allowed_financial_types)) {
+            $type_err = "Invalid or missing request type submitted. Please return to the request selection page or use the correct form.";
         } else {
-            $type = trim($raw_type);
+            $type = trim($raw_type); // IMPORTANT: Update $type for database binding
         }
 
         $amount_str = trim($raw_amount);
@@ -106,7 +152,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             $description = trim($raw_description);
         }
         
-        // --- 2. Validate File Upload ---
+        // --- 2. Validate File Upload (No change needed here) ---
         $file_upload_success = true; // Assume success initially
         $uploaded_file_name = null;
         $uploaded_file_path = null;
@@ -121,11 +167,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             } elseif ($fileError === UPLOAD_ERR_OK) {
                 $original_file_name = basename($_FILES["supporting_file"]["name"]);
                 $file_extension = pathinfo($original_file_name, PATHINFO_EXTENSION);
-                $allowed_types = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx'];
+                $allowed_file_extensions = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx'];
                 $max_size = 5 * 1024 * 1024; // 5MB limit in application
 
                 // Check file extension
-                if (!in_array(strtolower($file_extension), $allowed_types)) {
+                if (!in_array(strtolower($file_extension), $allowed_file_extensions)) {
                     $file_err = "Invalid file type. Only PDF, images (JPG/PNG), and Word documents are allowed.";
                     $file_upload_success = false;
                 }
@@ -172,7 +218,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             $success = true;
 
             try {
-                // --- 3. Insert Request Details (same as fixed version) ---
+                // --- 3. Insert Request Details ---
+                // The requests table is used for all financial requests
                 $sql_request = "
                     INSERT INTO requests (
                         user_id, 
@@ -192,7 +239,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 ";
                 
                 if ($stmt_request = mysqli_prepare($link, $sql_request)) {
-                    // 'isids' -> user_id(i), title(s), type(s), amount(d), description(s)
+                    // 'issds' -> user_id(i), title(s), type(s), amount(d), description(s)
                     mysqli_stmt_bind_param($stmt_request, "issds", 
                         $param_user_id, 
                         $param_title, 
@@ -203,7 +250,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     
                     $param_user_id = $_SESSION["user_id"];
                     $param_title = $title;
-                    $param_type = $type;
+                    $param_type = $type; // Use the validated $type (e.g., 'Budget Request')
                     $param_amount = $amount;
                     $param_description = $description;
                     
@@ -267,7 +314,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         }
     }
 
-    // Close connection
+    // Close connection (only if form was submitted and we didn't redirect)
     mysqli_close($link);
 }
 ?>
@@ -277,7 +324,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Submit New Request | AUF System</title>
+    <title>Submit <?php echo htmlspecialchars($type); ?> | AUF System</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #f4f7f9; }
@@ -291,6 +338,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         <h1 class="text-xl font-bold">AUF Officer Panel</h1>
         <div class="flex items-center space-x-4">
             <a href="dashboard.php" class="hover:text-indigo-200 transition duration-150">Dashboard</a>
+            <a href="request_select.php" class="hover:text-indigo-200 transition duration-150 font-bold text-yellow-300">New Request</a>
             <a href="request_list.php" class="hover:text-indigo-200 transition duration-150">My Requests</a>
             <span class="text-sm font-light">
                 Logged in as: <b><?php echo htmlspecialchars($_SESSION["full_name"]); ?></b>
@@ -301,7 +349,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
     <div class="container mx-auto p-4 sm:p-8">
         <div class="flex justify-between items-center mb-6 border-b pb-4">
-            <h2 class="text-3xl font-extrabold text-gray-800">New Funding Request</h2>
+            <h2 class="text-3xl font-extrabold text-gray-800">Submit <?php echo htmlspecialchars($type); ?></h2>
             <p class="text-gray-500">Submitting for: <?php echo htmlspecialchars($_SESSION["org_name"] ?? ''); ?></p>
         </div>
 
@@ -313,27 +361,29 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         <?php endif; ?>
 
         <div class="max-w-3xl mx-auto bg-white p-6 sm:p-10 rounded-xl shadow-2xl">
-            <form action="<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>" method="post" enctype="multipart/form-data" class="space-y-6">
+            <form action="<?php echo htmlspecialchars($_SERVER["PHP_SELF"]) . (!empty($type_param) ? '?type=' . htmlspecialchars($type_param) : ''); ?>" method="post" enctype="multipart/form-data" class="space-y-6">
                 
+                <input type="hidden" name="type" value="<?php echo htmlspecialchars($type); ?>">
+                <?php if (!empty($type_err)): ?>
+                    <div class="bg-red-100 border border-red-400 text-red-700 p-3 rounded-lg">
+                        <p class="text-sm font-medium">Error: <?php echo $type_err; ?></p>
+                    </div>
+                <?php endif; ?>
+
                 <div>
                     <label for="title" class="block text-sm font-medium text-gray-700">Request Title (e.g., Annual Sports Fest Budget)</label>
                     <input type="text" name="title" id="title" 
-                           class="mt-1 block w-full px-4 py-2 border rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 <?php echo (!empty($title_err)) ? 'is-invalid' : 'border-gray-300'; ?>" 
-                           value="<?php echo htmlspecialchars($title); ?>" required>
+                            class="mt-1 block w-full px-4 py-2 border rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 <?php echo (!empty($title_err)) ? 'is-invalid' : 'border-gray-300'; ?>" 
+                            value="<?php echo htmlspecialchars($title); ?>" required>
                     <span class="invalid-feedback"><?php echo $title_err; ?></span>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                        <label for="type" class="block text-sm font-medium text-gray-700">Request Type</label>
-                        <select name="type" id="type" 
-                                class="mt-1 block w-full px-4 py-2 border rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white <?php echo (!empty($type_err)) ? 'is-invalid' : 'border-gray-300'; ?>" required>
-                            <option value="">-- Select Type --</option>
-                            <option value="Budget Request" <?php echo ($type == 'Budget Request') ? 'selected' : ''; ?>>Budget Request</option>
-                            <option value="Liquidation Report" <?php echo ($type == 'Liquidation Report') ? 'selected' : ''; ?>>Liquidation Report</option>
-                            <option value="Reimbursement" <?php echo ($type == 'Reimbursement') ? 'selected' : ''; ?>>Reimbursement</option>
-                        </select>
-                        <span class="invalid-feedback"><?php echo $type_err; ?></span>
+                        <label class="block text-sm font-medium text-gray-700">Request Type (Selected)</label>
+                        <p class="mt-1 block w-full px-4 py-2 bg-gray-100 text-gray-600 rounded-lg shadow-sm border border-gray-300 font-semibold">
+                            <?php echo htmlspecialchars($type); ?>
+                        </p>
                     </div>
 
                     <div>
@@ -357,7 +407,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     <label for="supporting_file" class="block text-sm font-medium text-gray-700 mb-2">Supporting Document (e.g., Proposal, Quotation, Receipt)</label>
                     <input type="file" name="supporting_file" id="supporting_file" 
                            class="mt-1 block w-full border border-gray-300 rounded-lg p-2 bg-white text-sm <?php echo (!empty($file_err)) ? 'is-invalid' : ''; ?>">
-                    <p class="text-xs text-gray-500 mt-1">Max 5MB. Allowed types: PDF, JPG, PNG, DOC/DOCX.</p>
+                    <p class="text-xs text-gray-500 mt-1">Max 5MB. Allowed types: PDF, JPG, PNG, DOC/DOCX. (Optional)</p>
                     <span class="invalid-feedback"><?php echo $file_err; ?></span>
                 </div>
 

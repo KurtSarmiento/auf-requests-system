@@ -18,6 +18,7 @@ $org_id = $_SESSION["org_id"];
 $request_count = 0;
 $pending_count = 0;
 $approved_count = 0;
+$rejected_count = 0;
 $organization_name = "N/A";
 
 // --- Fetch Organization Name ---
@@ -31,53 +32,54 @@ if ($stmt = mysqli_prepare($link, $org_sql)) {
     mysqli_stmt_close($stmt);
 }
 
-// --- Fetch Request Counts ---
-// NOTE: Count "final approved" as requests whose notification_status indicates final approval.
-// The AFO step sets notification_status = 'Budget Available', so include that value.
-// For pending, count any notification_status that starts with 'Awaiting ' to avoid mismatches.
-$count_sql = "SELECT 
-    COUNT(request_id) AS total,
-    SUM(CASE WHEN notification_status LIKE 'Awaiting %' THEN 1 ELSE 0 END) AS pending,
-    SUM(CASE WHEN notification_status IN ('Final Approved', 'Budget Available') THEN 1 ELSE 0 END) AS approved
-FROM requests 
-WHERE user_id = ?";
+// --- Fetch Request Counts (Funding + Venue, Per Officer) ---
+$sql_counts = "
+    SELECT 
+        COUNT(*) AS total_requests,
+        SUM(CASE WHEN final_status = 'Approved' THEN 1 ELSE 0 END) AS approved_count,
+        SUM(CASE WHEN final_status = 'Pending' THEN 1 ELSE 0 END) AS pending_count,
+        SUM(CASE WHEN final_status = 'Rejected' THEN 1 ELSE 0 END) AS rejected_count
+    FROM (
+        SELECT final_status FROM requests WHERE user_id = ?
+        UNION ALL
+        SELECT final_status FROM venue_requests WHERE user_id = ?
+    ) AS combined
+";
 
-if ($stmt = mysqli_prepare($link, $count_sql)) {
-    mysqli_stmt_bind_param($stmt, "i", $user_id);
-    if (mysqli_stmt_execute($stmt)) {
-        // Bind results to our variables
-        mysqli_stmt_bind_result($stmt, $request_count, $pending_count, $approved_count);
-        mysqli_stmt_fetch($stmt);
+if ($stmt_counts = mysqli_prepare($link, $sql_counts)) {
+    mysqli_stmt_bind_param($stmt_counts, "ii", $user_id, $user_id);
+    if (mysqli_stmt_execute($stmt_counts)) {
+        $result = mysqli_stmt_get_result($stmt_counts);
+        if ($row = mysqli_fetch_assoc($result)) {
+            $request_count  = (int) ($row['total_requests'] ?? 0);
+            $approved_count = (int) ($row['approved_count'] ?? 0);
+            $pending_count  = (int) ($row['pending_count'] ?? 0);
+            $rejected_count = (int) ($row['rejected_count'] ?? 0);
+        }
     }
-    mysqli_stmt_close($stmt);
+    mysqli_stmt_close($stmt_counts);
 }
-
-mysqli_close($link);
 
 // Start the page using the template function
 start_page("Officer Dashboard", $role, $full_name);
-
 ?>
 
-<!-- Dashboard Content -->
-<h2 class="text-5xl font-extrabold text-gray-900 mb-2">Welcome, <?php echo htmlspecialchars(explode(' ', $full_name)[0]); ?>!</h2>
+<h2 class="text-5xl font-extrabold text-gray-900 mb-2">
+    Welcome, <?php echo htmlspecialchars(explode(' ', $full_name)[0]); ?>!
+</h2>
 <p class="text-xl text-gray-600 mb-10">
     Dashboard for the <span class="font-bold text-blue-700"><?php echo htmlspecialchars($organization_name); ?></span> Officer.
 </p>
 
-<!-- Quick Action Buttons -->
 <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-    <!-- Submit New Request (Primary Action) -->
-    <a href="request_create.php" class="bg-blue-600 hover:bg-blue-700 text-white p-8 rounded-xl shadow-2xl transition duration-300 transform hover:scale-[1.03] flex flex-col justify-center">
+    <a href="request_select.php" class="bg-blue-600 hover:bg-blue-700 text-white p-8 rounded-xl shadow-2xl transition duration-300 transform hover:scale-[1.03] flex flex-col justify-center">
         <h3 class="text-3xl font-bold mb-1">Submit New Request</h3>
-        <p class="text-sm opacity-90 font-light">Start the multi-stage approval process.</p>
+        <p class="text-sm opacity-90 font-light">Choose from Budget, Liquidation, Reimbursement, or Venue forms.</p>
     </a>
-    <!-- View Submissions (Secondary Action) -->
     <a href="request_list.php" class="bg-indigo-600 hover:bg-indigo-700 text-white p-8 rounded-xl shadow-2xl transition duration-300 transform hover:scale-[1.03] flex flex-col justify-center">
         <h3 class="text-3xl font-bold mb-1">View My Submissions</h3>
-        <p class="text-sm opacity-90 font-light">Track statuses and progress.</p>
+        <p class="text-sm opacity-90 font-light">Track statuses and progress of all requests.</p>
     </a>
-    <!-- Organization Info Card (Styled to match the links) -->
     <div class="bg-sky-600 text-white p-8 rounded-xl shadow-xl flex flex-col justify-center">
         <h3 class="text-xl font-semibold mb-1 opacity-80">Your Organization:</h3>
         <p class="text-3xl font-extrabold"><?php echo htmlspecialchars($organization_name); ?></p>
@@ -85,41 +87,37 @@ start_page("Officer Dashboard", $role, $full_name);
     </div>
 </div>
 
-<!-- Status Overview Cards -->
+<h3 class="text-2xl font-semibold text-gray-800 mb-4">Request Summary</h3>
 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-    
-    <!-- Total Requests Card (Neutral) -->
+
     <div class="bg-white p-6 rounded-xl shadow-lg border-2 border-gray-100 flex flex-col items-start">
-        <p class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Total Requests</p>
-        <p class="text-5xl font-extrabold text-gray-900 mt-2"><?php echo $request_count; ?></p>
-        <p class="text-xs text-gray-500 mt-2">All-time submissions</p>
+        <p class="text-sm font-semibold text-gray-600 uppercase tracking-wider">Total Submissions</p>
+        <p class="text-5xl font-extrabold text-gray-700 mt-2"><?php echo $request_count; ?></p>
+        <p class="text-xs text-gray-500 mt-2">All-time requests submitted</p>
     </div>
 
-    <!-- Approved Card (Positive Blue/Green Accent) -->
     <div class="bg-white p-6 rounded-xl shadow-lg border-2 border-blue-400 flex flex-col items-start">
         <p class="text-sm font-semibold text-blue-600 uppercase tracking-wider">Final Approved</p>
         <p class="text-5xl font-extrabold text-blue-700 mt-2"><?php echo $approved_count; ?></p>
-        <p class="text-xs text-gray-500 mt-2">Ready for execution</p>
+        <p class="text-xs text-gray-500 mt-2">Ready for execution/liquidation</p>
     </div>
 
-    <!-- Pending Card (Warning Blue/Orange Accent) -->
     <div class="bg-white p-6 rounded-xl shadow-lg border-2 border-teal-400 flex flex-col items-start">
         <p class="text-sm font-semibold text-teal-600 uppercase tracking-wider">Awaiting Approval</p>
         <p class="text-5xl font-extrabold text-teal-700 mt-2"><?php echo $pending_count; ?></p>
         <p class="text-xs text-gray-500 mt-2">Currently in the pipeline</p>
     </div>
     
-    <!-- Closed Requests Card (Neutral Secondary) -->
-    <div class="bg-white p-6 rounded-xl shadow-lg border-2 border-gray-100 flex flex-col items-start">
-        <p class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Other Closed</p>
-        <p class="text-5xl font-extrabold text-gray-500 mt-2"><?php echo $request_count - $pending_count - $approved_count; ?></p>
-        <p class="text-xs text-gray-500 mt-2">Rejected</p>
+    <div class="bg-white p-6 rounded-xl shadow-lg border-2 border-red-400 flex flex-col items-start">
+        <p class="text-sm font-semibold text-red-600 uppercase tracking-wider">Total Rejected</p>
+        <p class="text-5xl font-extrabold text-red-700 mt-2"><?php echo $rejected_count; ?></p>
+        <p class="text-xs text-gray-500 mt-2">Requires review and resubmission</p>
     </div>
-
 </div>
 
-
-<?php
+<?php 
+// Close the database connection
+mysqli_close($link);
 // End the page using the template function
-end_page();
+end_page(); 
 ?>

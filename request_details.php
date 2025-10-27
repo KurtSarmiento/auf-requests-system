@@ -1,7 +1,7 @@
 <?php
 // Initialize the session
 session_start();
- 
+
 // Check if the user is logged in
 if (!isset($_SESSION["loggedin"]) || $_SESSION["loggedin"] !== true) {
     header("location: login.php");
@@ -10,43 +10,36 @@ if (!isset($_SESSION["loggedin"]) || $_SESSION["loggedin"] !== true) {
 
 require_once "db_config.php";
 
-// Get the request ID from the URL
+// Get request ID from URL (ensure it's an integer)
 $request_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 $request = null;
-$files = []; // Initialize files array
+$files = [];
 $error_message = "";
 
-// Security check: Only officers from the submitting organization can view the request.
+// Security check
 $is_officer = $_SESSION["role"] === 'Officer';
 $org_id = $_SESSION["org_id"];
 
-// Function to determine CSS class for status pill
+// ✅ PHP 7.4 compatible: function for status pill
 function get_status_class($status) {
-    switch ($status) {
-        case 'Approved':
-            return 'bg-green-100 text-green-800 border-green-500';
-        case 'Rejected':
-            return 'bg-red-100 text-red-800 border-red-500';
-        case 'Awaiting AFO Approval':
-            return 'bg-yellow-100 text-yellow-800 border-yellow-500';
-        case 'Budget Available':
-            return 'bg-purple-100 text-purple-800 border-purple-500 font-bold';
-        case 'Pending':
-        default:
-            return 'bg-blue-100 text-blue-800 border-blue-500';
-    }
+    if ($status == 'Approved') return 'bg-green-100 text-green-800 border-green-500';
+    elseif ($status == 'Rejected') return 'bg-red-100 text-red-800 border-red-500';
+    elseif ($status == 'Awaiting AFO Approval') return 'bg-yellow-100 text-yellow-800 border-yellow-500';
+    elseif ($status == 'Budget Available') return 'bg-purple-100 text-purple-800 border-purple-500 font-bold';
+    else return 'bg-blue-100 text-blue-800 border-blue-500';
 }
 
 // --- 1. Fetch Request Details ---
+// ✅ Converted to mysqli_query() for PHP 7.4
 $sql = "
     SELECT 
         r.*, 
         u.full_name AS submitted_by_name, 
         o.org_name,
-        r.adviser_remark,   /* <-- NEW: FETCH REMARK COLUMNS */
-        r.dean_remark,      /* <-- NEW: FETCH REMARK COLUMNS */
-        r.osafa_remark,     /* <-- NEW: FETCH REMARK COLUMNS */
-        r.afo_remark        /* <-- NEW: FETCH REMARK COLUMNS */
+        r.adviser_remark,
+        r.dean_remark,
+        r.osafa_remark,
+        r.afo_remark
     FROM 
         requests r
     JOIN 
@@ -54,67 +47,46 @@ $sql = "
     JOIN
         organizations o ON u.org_id = o.org_id
     WHERE 
-        r.request_id = ? 
+        r.request_id = $request_id
 ";
 
+// ✅ Officer restriction: only view own org’s request
 if ($is_officer) {
-    $sql .= " AND u.org_id = ?";
+    $org_id_safe = mysqli_real_escape_string($link, $org_id);
+    $sql .= " AND u.org_id = '$org_id_safe'";
 }
 
-if ($stmt = mysqli_prepare($link, $sql)) {
-    if ($is_officer) {
-        mysqli_stmt_bind_param($stmt, "ii", $request_id, $org_id); // 'i' for request_id, 'i' for org_id
-    } else {
-        // If the user is an admin viewing (not Officer), no org_id filter is applied.
-        // NOTE: In a perfect system, admins (Adviser/Dean etc.) would use admin_review.php,
-        // but this handles admins viewing this file without the org_id constraint.
-        mysqli_stmt_bind_param($stmt, "i", $request_id);
-    }
+$result = mysqli_query($link, $sql);
 
-    if (mysqli_stmt_execute($stmt)) {
-        $result = mysqli_stmt_get_result($stmt);
-        if (mysqli_num_rows($result) == 1) {
-            $request = mysqli_fetch_assoc($result);
-        } else {
-            $error_message = "Request not found or you do not have permission to view it.";
-        }
+if ($result) {
+    if (mysqli_num_rows($result) == 1) {
+        $request = mysqli_fetch_assoc($result);
     } else {
-        $error_message = "Database execution error fetching request: " . mysqli_error($link);
+        $error_message = "Request not found or you do not have permission to view it.";
     }
-
-    mysqli_stmt_close($stmt);
 } else {
-    $error_message = "Database statement preparation error for request: " . mysqli_error($link);
+    $error_message = "Database error fetching request: " . mysqli_error($link);
 }
 
-// --- 2. Fetch Attached Files (only if request was found) ---
+// --- 2. Fetch Attached Files ---
 if ($request) {
-    // SECURITY NOTE: This still uses a direct link to the uploads folder in the HTML below. 
-    // It should be changed to point to a secure gateway script (e.g., download_file.php)
-    // as previously advised, to prevent unauthorized file access.
     $sql_files = "
         SELECT 
             file_id, original_file_name, file_name
         FROM 
             files 
         WHERE 
-            request_id = ?
+            request_id = $request_id
     ";
-    
-    if ($stmt_files = mysqli_prepare($link, $sql_files)) {
-        mysqli_stmt_bind_param($stmt_files, "i", $request_id);
-        
-        if (mysqli_stmt_execute($stmt_files)) {
-            $result_files = mysqli_stmt_get_result($stmt_files);
-            $files = mysqli_fetch_all($result_files, MYSQLI_ASSOC);
-        } else {
-            // Log file fetch error, but don't stop the page load
-            error_log("Failed to fetch files for request ID $request_id: " . mysqli_error($link));
-        }
-        mysqli_stmt_close($stmt_files);
+
+    $result_files = mysqli_query($link, $sql_files);
+
+    if ($result_files) {
+        $files = mysqli_fetch_all($result_files, MYSQLI_ASSOC);
+    } else {
+        error_log("Failed to fetch files for request ID $request_id: " . mysqli_error($link));
     }
 }
-
 
 // Close connection
 mysqli_close($link);
@@ -123,7 +95,6 @@ mysqli_close($link);
 if (!$request && !$error_message) {
     $error_message = "Invalid request ID.";
 }
-
 ?>
 
 <!DOCTYPE html>
@@ -135,20 +106,8 @@ if (!$request && !$error_message) {
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { font-family: 'Inter', sans-serif; background-color: #f4f7f9; }
-        .status-pill { 
-            padding: 4px 10px; 
-            border-radius: 9999px; 
-            font-size: 0.75rem; 
-            font-weight: 600; 
-            border: 1px solid; 
-            display: inline-block;
-        }
-        .info-box {
-            padding: 1.5rem;
-            border-radius: 0.75rem;
-            background-color: #ffffff;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
-        }
+        .status-pill { padding: 4px 10px; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; border: 1px solid; display: inline-block; }
+        .info-box { padding: 1.5rem; border-radius: 0.75rem; background-color: #ffffff; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1); }
     </style>
 </head>
 <body class="min-h-screen">
@@ -171,7 +130,7 @@ if (!$request && !$error_message) {
                 <?php echo $request ? 'Request #' . htmlspecialchars($request['request_id']) . ': ' . htmlspecialchars($request['title']) : 'Request Details'; ?>
             </h2>
             <a href="request_list.php" class="text-indigo-600 hover:text-indigo-800 transition duration-150 font-medium flex items-center">
-                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
                 Back to List
             </a>
         </div>
@@ -183,8 +142,8 @@ if (!$request && !$error_message) {
             </div>
         <?php else: ?>
 
+            <!-- Summary Info -->
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-                
                 <div class="info-box border-l-4 border-blue-500 bg-blue-50/70">
                     <p class="text-sm font-medium text-gray-500 mb-2">Current Final Status</p>
                     <?php $final_status = htmlspecialchars($request['final_status']); ?>
@@ -202,23 +161,20 @@ if (!$request && !$error_message) {
 
                 <div class="info-box">
                     <p class="text-sm font-medium text-gray-500 mb-2">Requested Amount</p>
-                    <p class="text-xl font-bold text-indigo-700">
-                        ₱<?php echo number_format($request['amount'], 2); ?>
-                    </p>
+                    <p class="text-xl font-bold text-indigo-700">₱<?php echo number_format($request['amount'], 2); ?></p>
                 </div>
             </div>
 
+            <!-- Organization + Submitter + Date -->
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
                 <div class="info-box">
                     <p class="text-sm font-medium text-gray-500 mb-2">Organization</p>
                     <p class="text-xl font-bold text-gray-800"><?php echo htmlspecialchars($request['org_name']); ?></p>
                 </div>
-                
                 <div class="info-box">
                     <p class="text-sm font-medium text-gray-500 mb-2">Submitted By</p>
                     <p class="text-xl font-bold text-gray-800"><?php echo htmlspecialchars($request['submitted_by_name']); ?></p>
                 </div>
-
                 <div class="info-box">
                     <p class="text-sm font-medium text-gray-500 mb-2">Date Submitted</p>
                     <p class="text-xl font-bold text-gray-800">
@@ -227,13 +183,14 @@ if (!$request && !$error_message) {
                 </div>
             </div>
 
+            <!-- Details & Approval Flow -->
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
                 <div class="lg:col-span-2 info-box h-full">
                     <h3 class="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">Detailed Justification</h3>
                     <p class="text-gray-700 whitespace-pre-wrap"><?php echo htmlspecialchars($request['description']); ?></p>
                 </div>
 
+                <!-- Approval Flow -->
                 <div class="info-box border-l-4 border-gray-300 bg-gray-50">
                     <h3 class="text-xl font-semibold text-gray-800 mb-4 border-b pb-2">Approval Flow</h3>
                     <div class="space-y-4">
@@ -252,11 +209,8 @@ if (!$request && !$error_message) {
                             <div class="border-b border-gray-200 pb-3">
                                 <div class="flex justify-between items-center text-sm">
                                     <p class="font-medium text-gray-700"><?php echo $role_name; ?></p>
-                                    <span class="status-pill <?php echo get_status_class($status); ?>">
-                                        <?php echo $status; ?>
-                                    </span>
+                                    <span class="status-pill <?php echo get_status_class($status); ?>"><?php echo $status; ?></span>
                                 </div>
-                                
                                 <?php if (!empty($remark) && $status !== 'Pending'): ?>
                                     <div class="mt-2 p-3 text-xs bg-indigo-50 border-l-4 border-indigo-400 rounded-lg text-gray-700">
                                         <p class="font-semibold mb-1">Comment:</p>
@@ -265,12 +219,10 @@ if (!$request && !$error_message) {
                                 <?php endif; ?>
                             </div>
                         <?php endforeach; ?>
-                        
+
                         <div class="pt-4 border-t border-gray-200">
                             <p class="font-semibold text-gray-800 mb-2">Budget Availability</p>
-                            <?php 
-                                $notification_status = htmlspecialchars($request['notification_status']);
-                            ?>
+                            <?php $notification_status = htmlspecialchars($request['notification_status']); ?>
                             <span class="status-pill text-sm <?php echo get_status_class($notification_status); ?>">
                                 <?php echo $notification_status; ?>
                             </span>
@@ -278,17 +230,15 @@ if (!$request && !$error_message) {
                     </div>
                 </div>
 
+                <!-- Attachments -->
                 <div class="lg:col-span-3 info-box bg-indigo-50 border-indigo-500 border-2">
                     <h3 class="text-xl font-semibold text-indigo-800 mb-4">Supporting Attachments (<?php echo count($files); ?>)</h3>
-                    
                     <?php if (!empty($files)): ?>
                         <div class="space-y-3">
                             <?php foreach ($files as $file): ?>
                                 <div class="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200 shadow-sm">
                                     <p class="text-sm text-gray-700 font-medium truncate"><?php echo htmlspecialchars($file['original_file_name']); ?></p>
-                                    <a href="download_file.php?fid=<?php echo (int)$file['file_id']; ?>" class="text-indigo-600 hover:text-indigo-800 text-sm font-semibold" target="_blank" rel="noopener noreferrer">
-                                        Download
-                                    </a>
+                                    <a href="download_file.php?fid=<?php echo (int)$file['file_id']; ?>" class="text-indigo-600 hover:text-indigo-800 text-sm font-semibold" target="_blank" rel="noopener noreferrer">Download</a>
                                 </div>
                             <?php endforeach; ?>
                         </div>
@@ -298,9 +248,7 @@ if (!$request && !$error_message) {
                         </div>
                     <?php endif; ?>
                 </div>
-
             </div>
-
         <?php endif; ?>
     </div>
 </body>
