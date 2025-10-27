@@ -1,5 +1,5 @@
 <?php
-// Initialize the session
+// Initialize the session tite
 session_start(); // ✅ Required to track logged-in user
 
 // Check if the user is logged in and NOT an Officer (i.e., a Signatory)
