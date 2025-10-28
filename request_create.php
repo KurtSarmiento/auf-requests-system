@@ -9,6 +9,7 @@ if (!isset($_SESSION["loggedin"]) || $_SESSION["loggedin"] !== true || $_SESSION
 }
 
 require_once "db_config.php";
+require_once "layout_template.php";
 
 // --- Ensure we have an organization name to display (fallback to DB lookup if session missing) ---
 $organization_name = '';
@@ -317,6 +318,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     // Close connection (only if form was submitted and we didn't redirect)
     mysqli_close($link);
 }
+start_page("New Venue Request", $_SESSION['role'], $_SESSION['full_name']);
 ?>
 
 <!DOCTYPE html>
@@ -333,20 +335,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     </style>
 </head>
 <body class="min-h-screen">
-    
-    <div class="bg-indigo-900 text-white p-4 shadow-lg flex justify-between items-center">
-        <h1 class="text-xl font-bold">AUF Officer Panel</h1>
-        <div class="flex items-center space-x-4">
-            <a href="dashboard.php" class="hover:text-indigo-200 transition duration-150">Dashboard</a>
-            <a href="request_select.php" class="hover:text-indigo-200 transition duration-150 font-bold text-yellow-300">New Request</a>
-            <a href="request_list.php" class="hover:text-indigo-200 transition duration-150">My Requests</a>
-            <span class="text-sm font-light">
-                Logged in as: <b><?php echo htmlspecialchars($_SESSION["full_name"]); ?></b>
-            </span>
-            <a href="logout.php" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-lg transition duration-150">Logout</a>
-        </div>
-    </div>
-
     <div class="container mx-auto p-4 sm:p-8">
         <div class="flex justify-between items-center mb-6 border-b pb-4">
             <h2 class="text-3xl font-extrabold text-gray-800">Submit <?php echo htmlspecialchars($type); ?></h2>

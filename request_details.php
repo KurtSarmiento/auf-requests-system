@@ -9,6 +9,7 @@ if (!isset($_SESSION["loggedin"]) || $_SESSION["loggedin"] !== true) {
 }
 
 require_once "db_config.php";
+require_once "layout_template.php";
 
 // Get request ID from URL (ensure it's an integer)
 $request_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
