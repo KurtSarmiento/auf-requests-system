@@ -318,6 +318,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     // Close connection (only if form was submitted and we didn't redirect)
     mysqli_close($link);
 }
+start_page("New Venue Request", $_SESSION['role'], $_SESSION['full_name']);
 ?>
 
 <!DOCTYPE html>
