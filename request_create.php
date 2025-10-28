@@ -9,6 +9,7 @@ if (!isset($_SESSION["loggedin"]) || $_SESSION["loggedin"] !== true || $_SESSION
 }
 
 require_once "db_config.php";
+require_once "layout_template.php";
 
 // --- Ensure we have an organization name to display (fallback to DB lookup if session missing) ---
 $organization_name = '';
