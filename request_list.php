@@ -198,7 +198,7 @@ function get_final_status($request) {
                         };
 
                         $is_venue = ($request['type'] ?? 'funding') === 'venue';
-                        $detail_page = $is_venue ? 'officer_request_status.php' : 'request_details.php'; 
+                        $detail_page = $is_venue ? 'venue_request_details.php' : 'request_details.php'; 
                         $request_type_label = $is_venue 
                             ? '<span class="text-purple-600 font-bold">VENUE</span>' 
                             : '<span class="text-blue-600 font-bold">FUNDING</span>';

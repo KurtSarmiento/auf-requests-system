@@ -147,7 +147,9 @@ if ($role === 'Adviser' || $role === 'Dean') {
 $sql_parts = [];
 
 // 4.1. Funding/Standard Requests (Table 'requests')
-if (!empty($status_column)) {
+$venue_only_roles = ['Admin Services', 'CFDO', 'VP for Administration'];
+
+if (!empty($status_column) && !in_array($role, $venue_only_roles)) {
     // Note: 'activity_title' is aliased as 'title' and 'user_id' is included for outer filtering
     $sql_funding = "
         SELECT 
