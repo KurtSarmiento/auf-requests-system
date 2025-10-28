@@ -58,10 +58,18 @@ switch($current_role) {
         $role_map = ['cfdo_status', null, 'osafa_status', 'venue_requests'];
         break;
     case 'AFO':
-        $role_map = ['afo_status', 'osafa_status', null, 'both'];
+        // =======================================================================
+        // !!! BUG FIX 1 (Corrected) !!!
+        // AFO waits for OSAFA (funding) AND CFDO (venue)
+        // =======================================================================
+        $role_map = ['afo_status', 'osafa_status', 'cfdo_status', 'both'];
         break;
     case 'VP for Academic Affairs':
-        $role_map = ['vp_acad_status', null, 'cfdo_status', 'venue_requests'];
+        // =======================================================================
+        // !!! BUG FIX 2 (Corrected) !!!
+        // VP for Academic Affairs waits for AFO (venue)
+        // =======================================================================
+        $role_map = ['vp_acad_status', null, 'afo_status', 'venue_requests'];
         break;
     case 'VP for Administration':
         $role_map = ['vp_admin_status', null, 'vp_acad_status', 'venue_requests'];
@@ -112,15 +120,27 @@ if (!function_exists('get_status_class')) {
     }
 }
 
-// --- 1. Define Organization Filter (Only for Adviser/Dean) ---
+// =================================================================
+// !!! BUG FIX AREA: Correct Organization Filter Logic !!!
+// This replaces your old filter logic.
+// =================================================================
 $org_filter_sql = "";
-if ($current_role === 'Adviser' || $current_role === 'Dean') {
+if ($current_role === 'Adviser') {
+    // Advisers MUST be tied to an org
     if ($user_org_id > 0) {
-        $org_filter_sql = " AND o.org_id = " . (int)$user_org_id; // ✅ PHP 7 safe inline param
+        $org_filter_sql = " AND o.org_id = " . (int)$user_org_id;
     } else {
-        $error_message = "Your account is not linked to any organization.";
+        $error_message = "Your Adviser account is not linked to an organization. Please contact support.";
     }
+} elseif ($current_role === 'Dean') {
+    // Deans are OPTIONALLY tied to an org. If they are, filter. If not (org_id=0), they see all.
+    if ($user_org_id > 0) {
+        $org_filter_sql = " AND o.org_id = " . (int)$user_org_id;
+    }
+    // If org_id is 0, $org_filter_sql remains "" and no error is thrown. This is correct.
 }
+// Other roles (OSAFA, AFO, etc.) are not filtered by org, so $org_filter_sql remains "".
+
 
 // --- 2. Funding Requests SQL ---
 if (empty($error_message) && in_array($target_tables, ['requests', 'both'])) {
@@ -147,7 +167,8 @@ if (empty($error_message) && in_array($target_tables, ['requests', 'both'])) {
             o.org_name,
             u.full_name AS submitted_by,
             'Funding' AS request_type,
-            r.request_id AS review_link_id
+            r.request_id AS review_link_id,
+            r.type AS funding_type
         FROM requests r
         JOIN users u ON r.user_id = u.user_id
         JOIN organizations o ON u.org_id = o.org_id
@@ -163,9 +184,7 @@ if (empty($error_message) && in_array($target_tables, ['venue_requests', 'both']
     $venue_where_clause = "vr.{$role_column} = 'Pending' {$venue_previous_filter} {$org_filter_sql}";
     $union_prefix = !empty($funding_sql) ? " UNION ALL " : "";
 
-    $union_prefix = !empty($funding_sql) ? " UNION ALL " : "";
-
-$venue_sql = "
+    $venue_sql = "
     {$union_prefix}
     (SELECT
         vr.venue_request_id AS request_id,
@@ -184,7 +203,8 @@ $venue_sql = "
         o.org_name,
         u.full_name AS submitted_by,
         'Venue' AS request_type,
-        vr.venue_request_id AS review_link_id
+        vr.venue_request_id AS review_link_id,
+        'Venue Request' AS funding_type
     FROM venue_requests vr
     JOIN users u ON vr.user_id = u.user_id
     JOIN organizations o ON u.org_id = o.org_id
@@ -197,7 +217,7 @@ if (empty($error_message)) {
     $sql = trim("{$funding_sql} {$venue_sql} ORDER BY date_submitted ASC");
 
     if (empty($sql)) {
-        $error_message = "No requests to display for your role '{$current_role}'.";
+        // This is not an error, it just means the queue is empty.
         $requests = [];
     } else {
         // ✅ Converted from prepared statement to mysqli_query()
@@ -291,16 +311,21 @@ if (isset($link) && $link instanceof mysqli) {
                         <?php foreach ($requests as $request):
                             $type_tag_class = ($request['request_type'] === 'Funding') ? 'bg-indigo-500 text-white' : 'bg-pink-500 text-white';
                             $review_page = ($request['request_type'] === 'Funding') ? 'admin_review.php' : 'admin_venue_review.php';
+                            
+                            // Determine display type
+                            $display_type = ($request['request_type'] === 'Venue') ? 'Venue' : $request['funding_type']; // Budget, Liquidation, etc.
+
                         ?>
                         <tr class="hover:bg-indigo-50">
                             <td class="px-6 py-4 whitespace-nowrap">
-                                <span class="type-tag <?php echo $type_tag_class; ?>"><?php echo htmlspecialchars($request['request_type']); ?></span>
+                                <span class="type-tag <?php echo $type_tag_class; ?>"><?php echo htmlspecialchars($display_type); ?></span>
                                 <div class="text-sm font-bold text-indigo-600">#<?php echo htmlspecialchars($request['request_id']); ?></div>
                                 <div class="text-sm font-medium text-gray-900 truncate max-w-xs"><?php echo htmlspecialchars($request['title']); ?></div>
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap">
                                 <div class="text-sm text-gray-900"><?php echo htmlspecialchars($request['org_name']); ?></div>
                                 <div class="text-xs text-gray-500"><?php echo htmlspecialchars($request['submitted_by']); ?></div>
+
                             </td>
                             <td class="px-6 py-4 whitespace-nowrap">
                                 <?php if ($request['request_type'] === 'Funding'): ?>
