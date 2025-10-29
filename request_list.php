@@ -18,7 +18,7 @@ $role = $_SESSION["role"];
 // Check if the user is an Officer (this list is specifically for Officers)
 if ($role !== 'Officer') {
     // If not an officer, redirect them to their appropriate dashboard
-    header("location: dashboard.php");
+    header("location: admin_dashboard.php");
     exit;
 }
 
@@ -193,6 +193,7 @@ function get_final_status($request) {
                         $final_status = get_final_status($request);
                         $status_class = match ($final_status) {
                             'Approved' => 'bg-green-100 text-green-800 font-semibold',
+                            'Budget Available' => 'bg-green-100 text-green-800 font-semibold',
                             'Rejected' => 'bg-red-100 text-red-800 font-semibold',
                             default => 'bg-yellow-100 text-yellow-800'
                         };

@@ -40,12 +40,13 @@ $user_id = $_SESSION["user_id"];
 $full_name = $_SESSION["full_name"];
 $role = $_SESSION["role"];
 // --- ADDED: This is required for the new logic ---
-$user_org_id = isset($_SESSION["org_id"]) ? (int)$_SESSION["org_id"] : 0; 
+$user_org_id = isset($_SESSION["org_id"]) ? (int)$_SESSION["org_id"] : 0;
+$role_description = '';
+$error_message = ""; // To store errors
 
 // 1. Determine which status column and notification status to monitor based on the role
 $status_column = '';
-$current_review_status = '';
-$role_description = '';
+$current_review_status = ''; // This variable seems unused in the original, keeping for consistency
 
 // Define roles that review the 'requests' table (Funding/Standard requests)
 $funding_review_roles = ['Adviser', 'Dean', 'OSAFA', 'AFO'];
@@ -56,62 +57,74 @@ $venue_only_roles = [
     'VP for Academic Affairs',
     'VP for Administration'
 ];
-// --- ADDED: This is required for the new logic ---
+// Define roles that review both types of requests
 $dual_review_roles = ['Dean', 'OSAFA', 'AFO'];
 
+// Variables to store previous role columns for checking prerequisites
+$prev_status_column_funding = null;
+$prev_status_column_venue = null;
 
 switch ($role) {
     case 'Adviser':
         $status_column = 'adviser_status';
-        $current_review_status = 'Awaiting Adviser Review';
+        $current_review_status = 'Awaiting Adviser Review'; // Unused?
         $role_description = 'Organization Adviser';
         break;
     case 'Dean':
         $status_column = 'dean_status';
-        $current_review_status = 'Awaiting Dean Review';
+        $current_review_status = 'Awaiting Dean Review'; // Unused?
         $role_description = 'College Dean';
+        $prev_status_column_funding = 'adviser_status'; // Prerequisite for funding
+        // No prerequisite for venue assumed
         break;
     case 'OSAFA': // Assuming OSAFA Head role
         $status_column = 'osafa_status';
-        $current_review_status = 'Awaiting OSAFA Review';
+        $current_review_status = 'Awaiting OSAFA Review'; // Unused?
         $role_description = 'OSAFA Head';
+        $prev_status_column_funding = 'dean_status';
+        $prev_status_column_venue = 'admin_services_status';
         break;
     case 'AFO': // Assuming AFO Head role
         $status_column = 'afo_status';
-        $current_review_status = 'Awaiting AFO Review';
+        $current_review_status = 'Awaiting AFO Review'; // Unused?
         $role_description = 'AFO Head';
+        $prev_status_column_funding = 'osafa_status';
+        $prev_status_column_venue = 'cfdo_status';
         break;
-    // --- START: Roles that DO NOT have status columns on the 'requests' table ---
     case 'Admin Services': // Assuming Admin Services role
         $status_column = 'admin_services_status'; // Only exists on venue_requests table
         $current_review_status = 'Awaiting Admin Services Approval'; // Used for Venue
-        $role_description = 'Admin Services';
+        $role_description = 'Admin Services Head'; // Corrected description
+        $prev_status_column_venue = 'dean_status';
         break;
     case 'CFDO': // Assuming CFDO role
         $status_column = 'cfdo_status'; // Only exists on venue_requests table
         $current_review_status = 'Awaiting CFDO Approval'; // Used for Venue
-        $role_description = 'CFDO';
+        $role_description = 'CFDO Head'; // Corrected description
+        $prev_status_column_venue = 'osafa_status';
         break;
     case 'VP for Academic Affairs': // Assuming VP for Academic Affairs role
         $status_column = 'vp_acad_status'; // Fixed from VPAcad_status to match DB
         $current_review_status = 'Awaiting VP for Academic Affairs Approval'; // Used for Venue
         $role_description = 'VP for Academic Affairs';
+        $prev_status_column_venue = 'afo_status';
         break;
     case 'VP for Administration': // Assuming VP for Administration role
         $status_column = 'vp_admin_status'; // Fixed from VPAdmin_status to match DB
         $current_review_status = 'Awaiting VP for Administration Approval'; // Used for Venue
         $role_description = 'VP for Administration';
+        $prev_status_column_venue = 'vp_acad_status';
         break;
-    // --- END: Roles that DO NOT have status columns on the 'requests' table ---
     default:
-        // Handle unexpected roles (shouldn't happen if user table is clean)
+        // Handle unexpected roles
         $status_column = '';
-        $current_review_status = 'Unknown';
+        $current_review_status = 'Unknown'; // Unused?
         $role_description = 'Administrator';
+        $error_message = "Your role ('" . htmlspecialchars($role) . "') is not configured correctly.";
 }
 
 // ===================================================================
-// --- START: REPLACEMENT LOGIC FOR DATA FETCHING (Corrected) ---
+// --- START: ORIGINAL DATA FETCHING LOGIC WITH AFO MODIFICATIONS ---
 // ===================================================================
 
 // Initialize counts
@@ -120,54 +133,44 @@ $approved_count = 0;
 $rejected_count = 0;
 
 // --- Build SQL conditions ---
-$sql_approved = "($status_column = 'Approved')";
-$sql_rejected = "($status_column = 'Rejected')";
+$sql_approved = "({$status_column} = 'Approved')";
+$sql_rejected = "({$status_column} = 'Rejected')";
 
 // --- Build PENDING condition for Funding Requests (table: requests) ---
 // This logic ensures we only count if the previous role approved
 $funding_pending_condition = "";
 if (in_array($role, $funding_review_roles)) {
-    $funding_pending_condition = "($status_column = 'Pending')";
-    
-    if ($role === 'Dean') {
-        $funding_pending_condition .= " AND (adviser_status = 'Approved')";
-    } elseif ($role === 'OSAFA') {
-        $funding_pending_condition .= " AND (dean_status = 'Approved')";
-    } elseif ($role === 'AFO') {
-        $funding_pending_condition .= " AND (osafa_status = 'Approved')";
+    // ✅ AFO LOGIC: Modify the base pending condition for AFO
+    if ($role === 'AFO') {
+         $funding_pending_condition = "({$status_column} = 'Pending' OR final_status = 'Budget Processing')";
+    } else {
+         $funding_pending_condition = "({$status_column} = 'Pending')";
     }
-    // Adviser is the first step, so no previous role check needed
+    
+    // Add prerequisite check based on the switch statement above
+    if ($prev_status_column_funding) {
+        $funding_pending_condition .= " AND ({$prev_status_column_funding} = 'Approved')";
+    }
 }
 
 // --- Build PENDING condition for Venue Requests (table: venue_requests) ---
 // This logic ensures we only count if the previous role approved
 $venue_pending_condition = "";
+// Check if the role is involved in venue reviews (dual or venue-only)
 if (in_array($role, $dual_review_roles) || in_array($role, $venue_only_roles)) {
     
-    $venue_pending_condition = "($status_column = 'Pending')";
+    $venue_pending_condition = "({$status_column} = 'Pending')";
 
-    // Add logic for previous role approval IN THE VENUE CHAIN
-    if ($role === 'Admin Services') {
-        $venue_pending_condition .= " AND (dean_status = 'Approved')";
-    } elseif ($role === 'OSAFA') {
-        $venue_pending_condition .= " AND (admin_services_status = 'Approved')";
-    } elseif ($role === 'CFDO') {
-        $venue_pending_condition .= " AND (osafa_status = 'Approved')";
-    } elseif ($role === 'AFO') {
-        $venue_pending_condition .= " AND (cfdo_status = 'Approved')";
-    } elseif ($role === 'VP for Academic Affairs') {
-        $venue_pending_condition .= " AND (afo_status = 'Approved')";
-    } elseif ($role === 'VP for Administration') {
-        $venue_pending_condition .= " AND (vp_acad_status = 'Approved')";
+    // Add prerequisite check based on the switch statement above
+    if ($prev_status_column_venue) {
+        $venue_pending_condition .= " AND ({$prev_status_column_venue} = 'Approved')";
     }
-    // Dean is the first step for venue, so no previous role check needed
 }
 
 // --- Build Organization Filter (for Adviser and Dean) ---
 // This logic is more efficient and handles the org_id=0 case for Deans
-$org_filter_clause_funding = "";
-$org_filter_clause_venue = "";
-$error_message = ""; // To store a potential error
+$org_filter_clause_funding = ""; // Use JOIN alias 'u' for user table
+$org_filter_clause_venue = "";   // Use JOIN alias 'u' for user table
 
 if ($role === 'Adviser') {
     // Advisers MUST be tied to an org
@@ -176,7 +179,7 @@ if ($role === 'Adviser') {
         $org_filter_clause_funding = " AND u.org_id = " . (int)$user_org_id;
     } else {
         $org_filter_clause_funding = " AND 1=0"; // 1=0 is 'false', returns 0 rows
-        $error_message = "Your Adviser account is not linked to an organization.";
+        if(empty($error_message)) $error_message = "Your Adviser account is not linked to an organization.";
     }
 } elseif ($role === 'Dean') {
     // Deans are OPTIONALLY tied to an org. If org_id=0, they see all.
@@ -189,102 +192,70 @@ if ($role === 'Adviser') {
 
 // --- 3. EXECUTE QUERIES ---
 
-if (in_array($role, $dual_review_roles)) {
-    // ==================================
-    // DUAL ROLE (Dean, OSAFA, AFO)
-    // ==================================
-    
-    // 1. PENDING COUNT (Query both tables and add)
-    $sql_funding = "SELECT COUNT(r.request_id) FROM requests r 
-                    JOIN users u ON r.user_id = u.user_id 
-                    WHERE $funding_pending_condition $org_filter_clause_funding";
-                    
-    $sql_venue = "SELECT COUNT(v.venue_request_id) FROM venue_requests v 
-                  JOIN users u ON v.user_id = u.user_id
-                  WHERE $venue_pending_condition $org_filter_clause_venue";
+// Only run queries if the role is valid and no critical errors occurred
+if (!empty($status_column) && empty($error_message)) {
 
-    if ($result = mysqli_query($link, $sql_funding)) {
-        $pending_count += (int)mysqli_fetch_row($result)[0];
-    }
-    if ($result = mysqli_query($link, $sql_venue)) {
-        $pending_count += (int)mysqli_fetch_row($result)[0];
-    }
+    // Determine which tables to query based on role category
+    $query_funding = in_array($role, $funding_review_roles);
+    $query_venue = in_array($role, $venue_only_roles) || in_array($role, $dual_review_roles);
 
-    // 2. APPROVED COUNT (Query both tables and add)
-    $sql_funding = "SELECT COUNT(r.request_id) FROM requests r
-                    JOIN users u ON r.user_id = u.user_id
-                    WHERE $sql_approved $org_filter_clause_funding";
-    $sql_venue = "SELECT COUNT(v.venue_request_id) FROM venue_requests v
-                  JOIN users u ON v.user_id = u.user_id
-                  WHERE $sql_approved $org_filter_clause_venue";
-    
-    if ($result = mysqli_query($link, $sql_funding)) {
-        $approved_count += (int)mysqli_fetch_row($result)[0];
-    }
-    if ($result = mysqli_query($link, $sql_venue)) {
-        $approved_count += (int)mysqli_fetch_row($result)[0];
-    }
-
-    // 3. REJECTED COUNT (Query both tables and add)
-    $sql_funding = "SELECT COUNT(r.request_id) FROM requests r
-                    JOIN users u ON r.user_id = u.user_id
-                    WHERE $sql_rejected $org_filter_clause_funding";
-    $sql_venue = "SELECT COUNT(v.venue_request_id) FROM venue_requests v
-                  JOIN users u ON v.user_id = u.user_id
-                  WHERE $sql_rejected $org_filter_clause_venue";
-    
-    if ($result = mysqli_query($link, $sql_funding)) {
-        $rejected_count += (int)mysqli_fetch_row($result)[0];
-    }
-    if ($result = mysqli_query($link, $sql_venue)) {
-        $rejected_count += (int)mysqli_fetch_row($result)[0];
-    }
-
-} elseif (in_array($role, $funding_review_roles)) {
-    // ==================================
-    // FUNDING ONLY ROLE (Adviser)
-    // ==================================
-    $sql = "SELECT 
-                COALESCE(SUM(CASE WHEN $funding_pending_condition THEN 1 ELSE 0 END), 0) AS pending,
-                COALESCE(SUM(CASE WHEN $sql_approved THEN 1 ELSE 0 END), 0) AS approved,
-                COALESCE(SUM(CASE WHEN $sql_rejected THEN 1 ELSE 0 END), 0) AS rejected
+    // --- Execute Funding Query (if applicable) ---
+    if ($query_funding && !empty($funding_pending_condition)) {
+        // ✅ AFO LOGIC: Modify approved condition for AFO
+        $funding_approved_condition = $sql_approved;
+        if($role === 'AFO') {
+            $funding_approved_condition = "(final_status = 'Budget Available')"; // Only count fully available
+        }
+        
+        $sql_funding_counts = "SELECT 
+                COALESCE(SUM(CASE WHEN {$funding_pending_condition} THEN 1 ELSE 0 END), 0) AS pending,
+                COALESCE(SUM(CASE WHEN {$funding_approved_condition} THEN 1 ELSE 0 END), 0) AS approved,
+                COALESCE(SUM(CASE WHEN {$sql_rejected} THEN 1 ELSE 0 END), 0) AS rejected
             FROM requests r
             JOIN users u ON r.user_id = u.user_id
-            WHERE 1=1 $org_filter_clause_funding";
-            
-    if ($result = mysqli_query($link, $sql)) {
-        $row = mysqli_fetch_assoc($result);
-        $pending_count = (int)$row['pending'];
-        $approved_count = (int)$row['approved'];
-        $rejected_count = (int)$row['rejected'];
+            WHERE 1=1 {$org_filter_clause_funding}";
+
+        if ($result = mysqli_query($link, $sql_funding_counts)) {
+            $row = mysqli_fetch_assoc($result);
+            $pending_count += (int)$row['pending'];
+            $approved_count += (int)$row['approved'];
+            $rejected_count += (int)$row['rejected'];
+            mysqli_free_result($result);
+        } else {
+             error_log("Dashboard Funding Count Error: " . mysqli_error($link));
+        }
     }
 
-} elseif (in_array($role, $venue_only_roles)) {
-    // ==================================
-    // VENUE ONLY ROLES (Admin Services, CFDO, VPs)
-    // ==================================
-    $sql = "SELECT 
-                COALESCE(SUM(CASE WHEN $venue_pending_condition THEN 1 ELSE 0 END), 0) AS pending,
-                COALESCE(SUM(CASE WHEN $sql_approved THEN 1 ELSE 0 END), 0) AS approved,
-                COALESCE(SUM(CASE WHEN $sql_rejected THEN 1 ELSE 0 END), 0) AS rejected
+    // --- Execute Venue Query (if applicable) ---
+    if ($query_venue && !empty($venue_pending_condition)) {
+        // Venue uses standard approved/rejected conditions
+        $sql_venue_counts = "SELECT 
+                COALESCE(SUM(CASE WHEN {$venue_pending_condition} THEN 1 ELSE 0 END), 0) AS pending,
+                COALESCE(SUM(CASE WHEN {$sql_approved} THEN 1 ELSE 0 END), 0) AS approved,
+                COALESCE(SUM(CASE WHEN {$sql_rejected} THEN 1 ELSE 0 END), 0) AS rejected
             FROM venue_requests v
             JOIN users u ON v.user_id = u.user_id
-            WHERE 1=1 $org_filter_clause_venue"; // Org filter not needed for these roles
+            WHERE 1=1 {$org_filter_clause_venue}";
 
-    if ($result = mysqli_query($link, $sql)) {
-        $row = mysqli_fetch_assoc($result);
-        $pending_count = (int)$row['pending'];
-        $approved_count = (int)$row['approved'];
-        $rejected_count = (int)$row['rejected'];
+        if ($result = mysqli_query($link, $sql_venue_counts)) {
+            $row = mysqli_fetch_assoc($result);
+            $pending_count += (int)$row['pending'];
+            $approved_count += (int)$row['approved'];
+            $rejected_count += (int)$row['rejected'];
+            mysqli_free_result($result);
+        } else {
+             error_log("Dashboard Venue Count Error: " . mysqli_error($link));
+        }
     }
 }
-
 // ===================================================================
-// --- END: REPLACEMENT LOGIC ---
+// --- END: ORIGINAL DATA FETCHING LOGIC WITH AFO MODIFICATIONS ---
 // ===================================================================
 
 // Close DB connection
-mysqli_close($link);
+if (isset($link) && $link instanceof mysqli) { // Check if link is valid before closing
+    mysqli_close($link);
+}
 
 // Start the page using the template function
 start_page("Admin Dashboard", $role, $full_name);
@@ -326,7 +297,16 @@ start_page("Admin Dashboard", $role, $full_name);
     <div class="bg-white p-6 rounded-xl shadow-lg border-2 border-teal-400 flex flex-col items-start">
         <p class="text-sm font-semibold text-teal-600 uppercase tracking-wider">Approved by You</p>
         <p class="text-5xl font-extrabold text-teal-700 mt-2"><?php echo $approved_count; ?></p>
-        <p class="text-xs text-gray-500 mt-2">Total requests approved in your stage</p>
+        <p class="text-xs text-gray-500 mt-2">
+            <?php 
+            // ✅ AFO LOGIC: Update description for the 'Approved' count box
+            if ($role === 'AFO') {
+                echo 'Total requests with budget available'; 
+            } else {
+                echo 'Total requests approved in your stage';
+            }
+            ?>
+        </p>
     </div>
 
     <div class="bg-white p-6 rounded-xl shadow-lg border-2 border-gray-100 flex flex-col items-start">
@@ -341,3 +321,4 @@ start_page("Admin Dashboard", $role, $full_name);
 // End the page using the template function
 end_page();
 ?>
+

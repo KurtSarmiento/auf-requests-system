@@ -95,6 +95,7 @@ if (!$role_column) {
 }
 
 // Function for CSS class
+// ✅ MODIFIED TO INCLUDE NEW STATUSES
 if (!function_exists('get_status_class')) {
     function get_status_class($status) {
         switch ($status) {
@@ -111,11 +112,14 @@ if (!function_exists('get_status_class')) {
             case 'Awaiting AFO Approval':
             case 'Awaiting VP for Academic Affairs Approval':
             case 'Awaiting VP for Administration Approval':
+            case 'Pending': // Added Pending here explicitly
                 return 'bg-yellow-100 text-yellow-800 border-yellow-500';
-            case 'Budget Available':
-                return 'bg-purple-100 text-purple-800 border-purple-500 font-bold';
-            default:
+            case 'Budget Available': // ✅ NEW
+                return 'bg-emerald-100 text-emerald-800 border-emerald-500 font-bold';
+            case 'Budget Processing': // ✅ NEW
                 return 'bg-blue-100 text-blue-800 border-blue-500';
+            default:
+                return 'bg-gray-100 text-gray-800 border-gray-500'; // Default fallback
         }
     }
 }
@@ -144,10 +148,26 @@ if ($current_role === 'Adviser') {
 
 // --- 2. Funding Requests SQL ---
 if (empty($error_message) && in_array($target_tables, ['requests', 'both'])) {
-    $funding_previous_filter = ($funding_previous_role_column !== null)
-        ? " AND r.{$funding_previous_role_column} = 'Approved'" : "";
-
-    $funding_where_clause = "r.{$role_column} = 'Pending' {$funding_previous_filter} {$org_filter_sql}";
+    
+    // ✅ MODIFIED AFO WHERE CLAUSE
+    $funding_where_clause = "";
+    if ($current_role === 'AFO') {
+        // AFO sees requests where afo_status is Pending OR final_status is Budget Processing
+        $funding_where_clause = "(r.{$role_column} = 'Pending' OR r.final_status = 'Budget Processing')";
+        // Must still ensure previous step (OSAFA) is approved
+        if ($funding_previous_role_column) {
+            $funding_where_clause .= " AND r.{$funding_previous_role_column} = 'Approved'";
+        }
+    } else {
+        // Standard logic for other roles
+        $funding_where_clause = "r.{$role_column} = 'Pending'";
+        if ($funding_previous_role_column) {
+            $funding_where_clause .= " AND r.{$funding_previous_role_column} = 'Approved'";
+        }
+    }
+    
+    // Add org filter if applicable
+    $funding_where_clause .= $org_filter_sql;
 
     $funding_sql = "
         (SELECT
@@ -164,6 +184,7 @@ if (empty($error_message) && in_array($target_tables, ['requests', 'both'])) {
             NULL AS vp_acad_status,
             NULL AS vp_admin_status,
             r.notification_status,
+            r.final_status, -- ✅ ADDED final_status
             o.org_name,
             u.full_name AS submitted_by,
             'Funding' AS request_type,
@@ -178,10 +199,16 @@ if (empty($error_message) && in_array($target_tables, ['requests', 'both'])) {
 
 // --- 3. Venue Requests SQL ---
 if (empty($error_message) && in_array($target_tables, ['venue_requests', 'both'])) {
-    $venue_previous_filter = ($venue_previous_role_column !== null)
-        ? " AND vr.{$venue_previous_role_column} = 'Approved'" : "";
-
-    $venue_where_clause = "vr.{$role_column} = 'Pending' {$venue_previous_filter} {$org_filter_sql}";
+    
+    // Standard logic for venue requests (no budget processing)
+    $venue_where_clause = "vr.{$role_column} = 'Pending'";
+    if ($venue_previous_role_column !== null) {
+        $venue_where_clause .= " AND vr.{$venue_previous_role_column} = 'Approved'";
+    }
+    
+    // Add org filter if applicable
+    $venue_where_clause .= $org_filter_sql;
+    
     $union_prefix = !empty($funding_sql) ? " UNION ALL " : "";
 
     $venue_sql = "
@@ -200,6 +227,7 @@ if (empty($error_message) && in_array($target_tables, ['venue_requests', 'both']
         vr.vp_acad_status,
         vr.vp_admin_status,
         vr.notification_status,
+        vr.final_status, -- ✅ ADDED final_status
         o.org_name,
         u.full_name AS submitted_by,
         'Venue' AS request_type,
@@ -221,7 +249,7 @@ if (empty($error_message)) {
         $requests = [];
     } else {
         // ✅ Converted from prepared statement to mysqli_query()
-        $result = mysqli_query($link, $sql);    
+        $result = mysqli_query($link, $sql);      
         if ($result) {
             $requests = mysqli_fetch_all($result, MYSQLI_ASSOC);
             mysqli_free_result($result);
@@ -347,8 +375,21 @@ if (isset($link) && $link instanceof mysqli) {
                                     'vp_acad_status' => 'VP ACAD',
                                     'vp_admin_status' => 'VP ADMIN',
                                 ];
+                                
+                                // ✅ AFO LOGIC: Determine what status to show AFO
+                                $display_status_for_me = $request[$role_column]; // Default is 'Pending'
+                                if ($current_role === 'AFO' && $request['request_type'] === 'Funding' && $request['final_status'] === 'Budget Processing') {
+                                    $display_status_for_me = 'Budget Processing';
+                                }
+                                
+                                // Show my current status first, highlighted
+                                echo '<span class="status-pill ' . get_status_class($display_status_for_me) . ' border-2 border-blue-500">' .
+                                             htmlspecialchars($current_role) . ': ' . htmlspecialchars($display_status_for_me) . '</span><br>';
+
+                                // Show statuses of OTHER approvers
                                 foreach ($status_columns as $col_name => $label) {
                                     $status_value = isset($request[$col_name]) ? $request[$col_name] : NULL;
+                                    // Show if status exists AND is not my own status column
                                     if ($status_value !== NULL && $col_name !== $role_column) {
                                         echo '<span class="status-pill ' . get_status_class($status_value) . '">' .
                                              htmlspecialchars($label) . ': ' . htmlspecialchars($status_value) . '</span>';

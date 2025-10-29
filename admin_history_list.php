@@ -17,11 +17,6 @@ $role = $_SESSION["role"];
 // 1. Determine Status Column and Role Description
 $status_column = '';
 $role_description = '';
-$date_column = ''; // Use date_updated as a proxy for decision date
-
-// 1. Determine Status Column and Role Description
-$status_column = '';
-$role_description = '';
 $date_column = ''; // This will now hold the specific decision date column name
 
 switch ($role) {
@@ -42,9 +37,10 @@ switch ($role) {
         $date_column = 'osafa_decision_date';
         break;
     case 'AFO':
-        $status_column = 'afo_status';
+        $status_column = 'afo_status'; // Still needed for the WHERE clause
         $role_description = 'AFO Head';
-        $date_column = 'afo_decision_date';
+        // ✅ AFO LOGIC: Date column logic moved to SQL SELECT
+        $date_column = 'afo_decision_date'; // Placeholder
         break;
     case 'Admin Services':
         $status_column = 'admin_services_status';
@@ -72,6 +68,18 @@ switch ($role) {
         $date_column = 'date_updated'; // Fallback only if role is somehow misconfigured
 }
 
+// ✅ ADDED: Helper function for status colors
+if (!function_exists('get_status_class')) {
+    function get_status_class($status) {
+        switch ($status) {
+            case 'Approved': return 'bg-teal-100 text-teal-800 border-teal-500'; // Standard Approved
+            case 'Rejected': return 'bg-red-100 text-red-800 border-red-500';
+            case 'Budget Available': return 'bg-emerald-100 text-emerald-800 border-emerald-500'; // AFO Approved
+            default: return 'bg-gray-100 text-gray-800 border-gray-500';
+        }
+    }
+}
+
 
 // 2. Search, Filter, and Pagination Setup
 $search_term = trim($_GET['search'] ?? '');
@@ -89,21 +97,36 @@ $org_filter_clause = '';
 $safe_search = "%" . $search_term . "%";
 
 // Base WHERE clause for Approved/Rejected status in the current admin's column
-$filter_clause = " (t.my_decision = 'Approved' OR t.my_decision = 'Rejected') ";
-
-// Filter by Approved or Rejected if specified
-if ($filter_status !== 'All') {
-    $filter_clause = " t.my_decision = ? ";
+// ✅ AFO LOGIC: Modified the filter to check for 'Budget Available' or 'Rejected'
+$params_filter = []; // Use a dedicated param array for the filter
+if ($role === 'AFO') {
+    // History includes 'Budget Available' OR 'Rejected' (based on afo_status)
+    // We filter based on the 'my_decision' alias which will be set correctly in the SQL
+    $filter_clause = " (t.my_decision = 'Budget Available' OR t.my_decision = 'Rejected') ";
+    if ($filter_status !== 'All') {
+         // Map 'Approved' in filter dropdown to 'Budget Available'
+        $status_to_check = ($filter_status === 'Approved') ? 'Budget Available' : $filter_status;
+        $filter_clause = " t.my_decision = ? ";
+        $params_filter[] = &$status_to_check;
+    }
+} else {
+    // Standard logic for other roles
+    $filter_clause = " (t.my_decision = 'Approved' OR t.my_decision = 'Rejected') ";
+    if ($filter_status !== 'All') {
+        $filter_clause = " t.my_decision = ? ";
+        $params_filter[] = &$filter_status;
+    }
 }
 
-// Add search clause: searches on request title (now available as t.title in the unified table)
+
+// Add search clause: searches on request title
 if (!empty($search_term)) {
     $search_clause = " AND t.title LIKE ? ";
 }
 
 // Adviser/Dean Organization Filtering
-$params = [];
-$types = '';
+$params_org = [];
+$types_org = '';
 
 if ($role === 'Adviser' || $role === 'Dean') {
     // Retrieve the admin's associated organization ID
@@ -133,24 +156,45 @@ if ($role === 'Adviser' || $role === 'Dean') {
 
             if (!empty($officer_ids)) {
                 $placeholders = implode(',', array_fill(0, count($officer_ids), '?'));
-                // Filter is applied against the 'user_id' column in the unified table 't'
                 $org_filter_clause = " AND t.user_id IN ($placeholders) "; 
-                $params = array_merge($params, $officer_ids);
-                $types .= str_repeat('i', count($officer_ids));
+                $params_org = $officer_ids; // Store directly
+                $types_org .= str_repeat('i', count($officer_ids));
+            } else {
+                // No officers in org, ensure no results are returned
+                $org_filter_clause = " AND t.user_id = -1 ";
             }
         }
     }
 }
 
 
-// --- 4. The Complex SQL Query (Funding Requests + Venue Requests) - **FIXED** ---
+// --- 4. The Complex SQL Query (Funding Requests + Venue Requests) ---
 $sql_parts = [];
 
 // 4.1. Funding/Standard Requests (Table 'requests')
-$venue_only_roles = ['Admin Services', 'CFDO', 'VP for Administration'];
+// Roles allowed to see funding history
+$funding_history_roles = ['Adviser', 'Dean', 'OSAFA', 'AFO'];
+if (in_array($role, $funding_history_roles)) {
+    
+    // ✅ AFO LOGIC: Special WHERE clause and SELECT logic for AFO history
+    $funding_where_clause = "";
+    $status_column_to_select = "r.$status_column"; // Default
+    $date_column_to_select = "r.$date_column";     // Default
 
-if (!empty($status_column) && !in_array($role, $venue_only_roles)) {
-    // Note: 'activity_title' is aliased as 'title' and 'user_id' is included for outer filtering
+    if ($role === 'AFO') {
+        // History = Rejected (afo_status) OR Budget Available (final_status)
+        // Note: Budget Processing items are NOT history yet.
+        $funding_where_clause = "WHERE (r.afo_status = 'Rejected' OR r.final_status = 'Budget Available')";
+        // Use 'final_status' if available, otherwise 'afo_status'
+        $status_column_to_select = "IF(r.final_status = 'Budget Available', r.final_status, r.afo_status)"; 
+        // Use 'date_budget_available' for approved, 'afo_decision_date' for rejected
+        // NOTE: Make sure `date_budget_available` column exists and is DATETIME, NULLable
+        $date_column_to_select = "IF(r.final_status = 'Budget Available', r.date_budget_available, r.afo_decision_date)";
+    } else {
+        // Standard WHERE for other roles
+        $funding_where_clause = "WHERE r.$status_column IN ('Approved', 'Rejected')";
+    }
+    
     $sql_funding = "
         SELECT 
             r.request_id, 
@@ -160,23 +204,25 @@ if (!empty($status_column) && !in_array($role, $venue_only_roles)) {
             o.org_name, 
             r.type, 
             r.amount, 
-            r.$status_column AS my_decision, 
-            r.$date_column AS decision_date,
+            {$status_column_to_select} AS my_decision, 
+            {$date_column_to_select} AS decision_date,
             'Funding' AS request_type_label 
         FROM requests r
         JOIN users u ON r.user_id = u.user_id
         JOIN organizations o ON u.org_id = o.org_id
-        WHERE r.$status_column IN ('Approved', 'Rejected')
+        {$funding_where_clause}
     ";
     $sql_parts[] = "({$sql_funding})";
 }
 
 
-// 4.2. Venue Requests (Table 'venue_requests') - CONDITIONAL INCLUSION APPLIED HERE
-// Use the same status column name, but only include the query if the role is NOT Adviser.
-if ($role !== 'Adviser' && !empty($status_column)) { 
+// 4.2. Venue Requests (Table 'venue_requests')
+// Roles allowed to see venue history
+$venue_history_roles = ['Dean', 'Admin Services', 'OSAFA', 'CFDO', 'AFO', 'VP for Academic Affairs', 'VP for Administration'];
+if (in_array($role, $venue_history_roles)) { 
     
-    // Note: 'activity_title' is aliased as 'title' and 'user_id' is included for outer filtering
+    // Note: AFO/Dean/OSAFA venue requests use the standard Approved/Rejected logic
+    
     $sql_venue = "
         SELECT 
             vr.venue_request_id AS request_id, 
@@ -233,7 +279,10 @@ $all_types = '';
 
 // 1. Filter Status Parameter (if not 'All')
 if ($filter_status !== 'All') {
-    $all_params[] = &$filter_status;
+    // ✅ Use the dedicated param array set earlier
+    foreach ($params_filter as $key => $value) {
+        $all_params[] = &$params_filter[$key];
+    }
     $all_types .= 's';
 }
 
@@ -244,11 +293,10 @@ if (!empty($search_term)) {
 }
 
 // 3. Organization IDs (Adviser/Dean only)
-// Note: $params and $types were already built in the organization filtering block.
-foreach ($params as $key => $value) {
-    $all_params[] = &$params[$key];
+foreach ($params_org as $key => $value) {
+    $all_params[] = &$params_org[$key]; // Use the org params directly
 }
-$all_types .= $types;
+$all_types .= $types_org;
 
 
 // --- Execute Count Query ---
@@ -257,7 +305,6 @@ if ($stmt_count = mysqli_prepare($link, $sql_count)) {
     // Bind all non-limit parameters for the count query
     if (!empty($all_types)) {
         $bind_count_params = array_merge([$stmt_count, $all_types], $all_params);
-        // We use call_user_func_array here as the original code did, for dynamic binding.
         call_user_func_array('mysqli_stmt_bind_param', $bind_count_params); 
     }
 
@@ -265,8 +312,12 @@ if ($stmt_count = mysqli_prepare($link, $sql_count)) {
         $result_count = mysqli_stmt_get_result($stmt_count);
         $row_count = mysqli_fetch_assoc($result_count);
         $total_records = (int) ($row_count['total_count'] ?? 0);
+    } else {
+        error_log("History Count Query Error: " . mysqli_stmt_error($stmt_count));
     }
     mysqli_stmt_close($stmt_count);
+} else {
+     error_log("History Count Prepare Error: " . mysqli_error($link));
 }
 $total_pages = ceil($total_records / $records_per_page);
 
@@ -274,15 +325,16 @@ $total_pages = ceil($total_records / $records_per_page);
 // --- Execute Final Data Query ---
 $requests = [];
 // Append LIMIT and OFFSET parameters
-$all_params[] = &$records_per_page;
-$all_params[] = &$offset;
+$limit_param = $records_per_page; // Create non-reference variable
+$offset_param = $offset;           // Create non-reference variable
+$all_params[] = &$limit_param;
+$all_params[] = &$offset_param;
 $all_types .= 'ii';
 
 if ($stmt = mysqli_prepare($link, $sql_final)) {
     // Prepare the final array of parameters for the main query
-    $bind_final_params = array_merge([$stmt, $all_types], $all_params);
-    
     if (!empty($all_types)) {
+        $bind_final_params = array_merge([$stmt, $all_types], $all_params);
         call_user_func_array('mysqli_stmt_bind_param', $bind_final_params);
     }
     
@@ -291,8 +343,12 @@ if ($stmt = mysqli_prepare($link, $sql_final)) {
         while ($row = mysqli_fetch_assoc($result)) {
             $requests[] = $row;
         }
+    } else {
+         error_log("History Data Query Error: " . mysqli_stmt_error($stmt));
     }
     mysqli_stmt_close($stmt);
+} else {
+    error_log("History Data Prepare Error: " . mysqli_error($link));
 }
 
 mysqli_close($link);
@@ -310,14 +366,14 @@ start_page("Completed Reviews History", $role, $full_name);
 
 <!-- Search and Filter Form -->
 <div class="bg-gray-50 p-6 rounded-xl shadow-inner mb-6 border border-blue-100">
-    <form method="GET" class="flex flex-col md:flex-row gap-4 items-end">
+    <form method="GET" action="admin_history_list.php" class="flex flex-col md:flex-row gap-4 items-end">
         
         <!-- Search Field -->
         <div class="flex-grow w-full md:w-auto">
-            <label for="search" class="block text-sm font-medium text-gray-700">Search by Title/Officer</label>
+            <label for="search" class="block text-sm font-medium text-gray-700">Search by Title</label>
             <input type="text" name="search" id="search" value="<?php echo htmlspecialchars($search_term); ?>" 
-                    placeholder="Enter keyword" 
-                    class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border">
+                   placeholder="Enter keyword" 
+                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border">
         </div>
 
         <!-- Status Filter -->
@@ -325,7 +381,9 @@ start_page("Completed Reviews History", $role, $full_name);
             <label for="status" class="block text-sm font-medium text-gray-700">Filter by Decision</label>
             <select id="status" name="status" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border bg-white">
                 <option value="All" <?php if ($filter_status === 'All') echo 'selected'; ?>>All Decisions</option>
-                <option value="Approved" <?php if ($filter_status === 'Approved') echo 'selected'; ?>>Approved</option>
+                <option value="Approved" <?php if ($filter_status === 'Approved') echo 'selected'; ?>>
+                    <?php echo ($role === 'AFO') ? 'Budget Available' : 'Approved'; // ✅ AFO LOGIC: Change label ?>
+                </option>
                 <option value="Rejected" <?php if ($filter_status === 'Rejected') echo 'selected'; ?>>Rejected</option>
             </select>
         </div>
@@ -346,13 +404,13 @@ start_page("Completed Reviews History", $role, $full_name);
 <!-- Results Table -->
 <div class="bg-white p-6 rounded-xl shadow-xl overflow-x-auto">
     <div class="mb-4 text-sm text-gray-600">
-        Showing <?php echo min($records_per_page, $total_records - $offset); ?> of <?php echo $total_records; ?> records.
+        Showing <?php echo min($records_per_page, max(0, $total_records - $offset)); ?> of <?php echo $total_records; ?> records.
     </div>
 
     <?php if (empty($requests)): ?>
         <div class="p-8 text-center text-gray-500 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
             <p class="font-semibold text-lg">No Completed Reviews Found</p>
-            <p class="text-sm mt-1">Adjust your search or filter criteria.</p>
+            <p class="text-sm mt-1">Adjust your search or filter criteria, or perhaps you haven't reviewed any requests yet.</p>
         </div>
     <?php else: ?>
         <table class="min-w-full divide-y divide-blue-200">
@@ -369,10 +427,29 @@ start_page("Completed Reviews History", $role, $full_name);
             </thead>
             <tbody class="bg-white divide-y divide-gray-100">
                 <?php foreach ($requests as $request): 
-                    // Determine color for decision status
-                    $decision_color = $request['my_decision'] === 'Approved' ? 'bg-teal-100 text-teal-800 border-teal-500' : 'bg-red-100 text-red-800 border-red-500';
+                    // ✅ AFO LOGIC: Use the get_status_class helper
+                    $decision_color = get_status_class($request['my_decision']);
+                    
                     $amount_display = is_numeric($request['amount']) ? '₱' . number_format($request['amount'], 2) : 'N/A';
-                    $request_link = $request['request_type_label'] === 'Venue' ? 'venue_request_details.php?id=' : 'request_details.php?id=';
+                    
+                    // Determine correct detail link
+                    $request_link = 'request_details.php?id='; // Default to funding
+                    if ($request['request_type_label'] === 'Venue') {
+                        $request_link = 'venue_request_details.php?id=';
+                    }
+                    
+                    // Format decision date, handle NULLs
+                    $decision_date_display = 'N/A';
+                    if (!empty($request['decision_date'])) {
+                        // Attempt to format the date
+                        $timestamp = strtotime($request['decision_date']);
+                        if ($timestamp !== false && $timestamp > 0) { // Check for valid timestamp
+                            $decision_date_display = date('M d, Y', $timestamp);
+                        } else {
+                            // If strtotime fails (e.g., '0000-00-00'), display raw or N/A
+                             $decision_date_display = 'Invalid Date';
+                        }
+                    } 
                 ?>
                 <tr class="hover:bg-blue-50 transition duration-100">
                     <td class="px-6 py-4 whitespace-nowrap">
@@ -395,11 +472,11 @@ start_page("Completed Reviews History", $role, $full_name);
                         </span>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        <?php echo date('M d, Y', strtotime($request['decision_date'])); ?>
+                        <?php echo $decision_date_display; ?>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <a href="<?php echo $request_link . $request['request_id']; ?>" 
-                            class="text-blue-600 hover:text-blue-900 font-semibold transition duration-150">View Details</a>
+                           class="text-blue-600 hover:text-blue-900 font-semibold transition duration-150">View Details</a>
                     </td>
                 </tr>
                 <?php endforeach; ?>
@@ -411,14 +488,18 @@ start_page("Completed Reviews History", $role, $full_name);
 <!-- Pagination Controls -->
 <div class="mt-6 flex justify-between items-center">
     <?php 
-        $query_params = http_build_query(['search' => $search_term, 'status' => $filter_status]);
+        // Rebuild query params excluding page
+        $query_params_array = [];
+        if (!empty($search_term)) $query_params_array['search'] = $search_term;
+        if ($filter_status !== 'All') $query_params_array['status'] = $filter_status;
+        $query_params = http_build_query($query_params_array);
+        if (!empty($query_params)) $query_params = '&' . $query_params; // Add leading ampersand if params exist
     ?>
     <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
         <!-- Previous Page Button -->
         <?php if ($page > 1): ?>
-            <a href="?page=<?php echo $page - 1; ?>&<?php echo $query_params; ?>" class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+            <a href="?page=<?php echo $page - 1; ?><?php echo $query_params; ?>" class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
                 <span class="sr-only">Previous</span>
-                <!-- Heroicon name: solid/chevron-left -->
                 <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                     <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd" />
                 </svg>
@@ -434,14 +515,13 @@ start_page("Completed Reviews History", $role, $full_name);
 
         <!-- Page Numbers (Simplified) -->
         <span class="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-blue-600 text-sm font-semibold text-white">
-            Page <?php echo $page; ?> of <?php echo $total_pages; ?>
+            Page <?php echo $page; ?> of <?php echo max(1, $total_pages); // Ensure at least 1 page ?>
         </span>
 
         <!-- Next Page Button -->
         <?php if ($page < $total_pages): ?>
-            <a href="?page=<?php echo $page + 1; ?>&<?php echo $query_params; ?>" class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+            <a href="?page=<?php echo $page + 1; ?><?php echo $query_params; ?>" class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
                 <span class="sr-only">Next</span>
-                <!-- Heroicon name: solid/chevron-right -->
                 <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                     <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
                 </svg>
@@ -459,7 +539,6 @@ start_page("Completed Reviews History", $role, $full_name);
         Total Results: <span class="font-semibold text-gray-900"><?php echo $total_records; ?></span>
     </div>
 </div>
-
 
 <?php
 end_page();

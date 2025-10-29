@@ -24,6 +24,9 @@ if (!function_exists('get_status_class')) {
             case 'Approved': return 'bg-green-100 text-green-800 border-green-500';
             case 'Rejected': return 'bg-red-100 text-red-800 border-red-500';
             case 'Pending':  return 'bg-yellow-100 text-yellow-800 border-yellow-500';
+            // ✅ ADDED NEW STATUSES
+            case 'Budget Processing': return 'bg-blue-100 text-blue-800 border-blue-500';
+            case 'Budget Available': return 'bg-emerald-100 text-emerald-800 border-emerald-500';
             default:         return 'bg-gray-100 text-gray-800 border-gray-500';
         }
     }
@@ -69,55 +72,101 @@ switch ($current_role) {
         break;
 }
 
+// Define the approval chain for display (used in "Awaiting" message)
+$approval_chain = [
+    'Adviser' => 'adviser_status',
+    'Dean' => 'dean_status',
+    'OSAFA' => 'osafa_status',
+    'AFO' => 'afo_status'
+];
+
+
 // ===================================
 // --- 2. HANDLE FORM SUBMISSION (POST) ---
 // ===================================
-if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0 && !empty($date_column)) {
-    $decision = $_POST['decision'];
-    $remark_text = trim($_POST['remark']);
-
-    // Determine the next status for the user
-    $next_notification_status = "";
-    if ($decision === 'Approved') {
-        switch ($current_role) {
-            case 'Adviser': $next_notification_status = 'Awaiting Dean Review'; break;
-            case 'Dean':    $next_notification_status = 'Awaiting OSAFA Review'; break;
-            case 'OSAFA': $next_notification_status = 'Awaiting AFO Review'; break;
-            case 'AFO':   $next_notification_status = 'Budget Available'; break;
-        }
-    } else {
-        // 'Rejected'
-        $next_notification_status = "Rejected by " . $current_role;
-    }
+if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
     
-    // Set final_status if this is the end of the line (AFO) or a rejection
-    $final_status_sql = "";
-    if (($current_role === 'AFO' && $decision === 'Approved') || $decision === 'Rejected') {
-        $final_status_sql = ", final_status = '{$decision}'";
-    }
+    $decision = $_POST['decision'];
+    $remark_text = trim($_POST['remark'] ?? ''); // remark might not exist on 'Available'
 
-    // --- UPDATED SQL: Using {$date_column} (e.g., adviser_decision_date) ---
-    $sql = "UPDATE requests 
-            SET 
-                {$role_column} = ?,
-                {$date_column} = NOW(),
-                {$remark_column} = ?,
-                notification_status = ?
-                {$final_status_sql}
-            WHERE 
-                request_id = ?";
-                
-    if ($stmt = mysqli_prepare($link, $sql)) {
-        mysqli_stmt_bind_param($stmt, "sssi", $decision, $remark_text, $next_notification_status, $request_id);
+    // ✅ START AFO "Mark as Budget Available" LOGIC
+    // This is the new, second-stage approval by AFO
+    if ($decision === 'Available' && $current_role === 'AFO') {
         
-        if (mysqli_stmt_execute($stmt)) {
-            $success_message = "Your decision ($decision) has been recorded successfully.";
+        // This is the FINAL step.
+        // Make sure you have added `date_budget_available` (DATETIME, NULLable) to your `requests` table
+        $sql = "UPDATE requests 
+                SET 
+                    final_status = 'Budget Available',
+                    notification_status = 'Budget Available',
+                    date_budget_available = NOW()
+                WHERE 
+                    request_id = ?";
+                    
+        if ($stmt = mysqli_prepare($link, $sql)) {
+            mysqli_stmt_bind_param($stmt, "i", $request_id);
+            if (mysqli_stmt_execute($stmt)) {
+                $success_message = "Success! The budget has been marked as available and the officer has been notified.";
+            } else {
+                $error_message = "Error: Could not mark budget as available. " . mysqli_error($link);
+            }
+            mysqli_stmt_close($stmt);
         } else {
-            $error_message = "Error: Could not execute the update. " . mysqli_error($link);
+            $error_message = "Error: Could not prepare the update statement. " . mysqli_error($link);
         }
-        mysqli_stmt_close($stmt);
-    } else {
-        $error_message = "Error: Could not prepare the update statement. " . mysqli_error($link);
+
+    // ✅ END AFO "Mark as Budget Available" LOGIC
+
+    // This is the original Approve/Reject logic
+    } elseif (in_array($decision, ['Approved', 'Rejected']) && !empty($date_column)) {
+
+        // Determine the next status for the user
+        $next_notification_status = "";
+        if ($decision === 'Approved') {
+            switch ($current_role) {
+                case 'Adviser': $next_notification_status = 'Awaiting Dean Review'; break;
+                case 'Dean':    $next_notification_status = 'Awaiting OSAFA Review'; break;
+                case 'OSAFA': $next_notification_status = 'Awaiting AFO Review'; break;
+                // ✅ AFO LOGIC: Change 'Budget Available' to 'Budget Processing'
+                case 'AFO':   $next_notification_status = 'Budget Processing'; break;
+            }
+        } else {
+            // 'Rejected'
+            $next_notification_status = "Rejected by " . $current_role;
+        }
+        
+        // ✅ AFO LOGIC: Set final_status
+        // Set final_status if this is a rejection, or if AFO is *first* approving
+        $final_status_sql = "";
+        if ($decision === 'Rejected') {
+            $final_status_sql = ", final_status = 'Rejected'";
+        } elseif ($current_role === 'AFO' && $decision === 'Approved') {
+            $final_status_sql = ", final_status = 'Budget Processing'"; // Not final yet
+        }
+
+        // --- UPDATED SQL: Using {$date_column} (e.g., adviser_decision_date) ---
+        $sql = "UPDATE requests 
+                SET 
+                    {$role_column} = ?,
+                    {$date_column} = NOW(),
+                    {$remark_column} = ?,
+                    notification_status = ?
+                    {$final_status_sql}
+                WHERE 
+                    request_id = ?";
+                        
+        if ($stmt = mysqli_prepare($link, $sql)) {
+            mysqli_stmt_bind_param($stmt, "sssi", $decision, $remark_text, $next_notification_status, $request_id);
+            
+            if (mysqli_stmt_execute($stmt)) {
+                $success_message = "Your decision ($decision) has been recorded successfully.";
+            } else {
+                $error_message = "Error: Could not execute the update. " . mysqli_error($link);
+            }
+            mysqli_stmt_close($stmt);
+        } else {
+            $error_message = "Error: Could not prepare the update statement. " . mysqli_error($link);
+        }
     }
 }
 
@@ -125,7 +174,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0 && !empty($date_colu
 // --- 3. FETCH REQUEST DATA (GET) ---
 // ===================================
 if ($request_id > 0) {
-    // --- UPDATED SQL: Select all _decision_date columns ---
+    // --- UPDATED SQL: Select all _decision_date columns + date_budget_available ---
     $sql = "SELECT 
                 r.*, 
                 u.full_name, 
@@ -133,7 +182,8 @@ if ($request_id > 0) {
                 r.adviser_decision_date,
                 r.dean_decision_date,
                 r.osafa_decision_date,
-                r.afo_decision_date
+                r.afo_decision_date,
+                r.date_budget_available 
             FROM requests r
             JOIN users u ON r.user_id = u.user_id
             JOIN organizations o ON u.org_id = o.org_id
@@ -169,21 +219,15 @@ if ($request_id > 0) {
     
     // Check if the request is actually ready for review by this role
     if ($request && $previous_role_column && $request[$previous_role_column] !== 'Approved') {
-        $error_message = "This request is not yet ready for your review. It is awaiting approval from a previous signatory.";
-        // Don't nullify the request, just show the error.
+        // ✅ AFO LOGIC: Don't show this error if AFO is in 'Budget Processing' stage
+        if (!($current_role === 'AFO' && $request['final_status'] === 'Budget Processing')) {
+            $error_message = "This request is not yet ready for your review. It is awaiting approval from a previous signatory.";
+        }
     }
     
 } else {
     $error_message = "Invalid request ID.";
 }
-
-// Define the approval chain for display
-$approval_chain = [
-    'Adviser' => 'adviser_status',
-    'Dean' => 'dean_status',
-    'OSAFA' => 'osafa_status',
-    'AFO' => 'afo_status'
-];
 
 // Start the page
 start_page("Review Funding Request", $current_role, $_SESSION["full_name"]);
@@ -276,8 +320,17 @@ start_page("Review Funding Request", $current_role, $_SESSION["full_name"]);
                 <div class="mt-4 pt-4 border-t border-gray-200">
                     <h4 class="text-md font-semibold text-gray-800 mb-2">Final Budget Status</h4>
                     <?php
+                        // ✅ MODIFIED: Show 'Budget Processing' and 'Budget Available'
                         $final_status_display = $request['notification_status'];
                         $final_status_class = get_status_class($request['final_status']);
+
+                        if ($request['final_status'] === 'Budget Available') {
+                            $final_status_display = 'Budget Available';
+                            $final_status_class = get_status_class('Budget Available');
+                        } elseif ($request['final_status'] === 'Budget Processing') {
+                            $final_status_display = 'Budget Processing';
+                            $final_status_class = get_status_class('Budget Processing');
+                        }
                     ?>
                     <span class="status-pill text-sm <?php echo $final_status_class; ?>">
                         <?php echo htmlspecialchars($final_status_display); ?>
@@ -336,62 +389,135 @@ start_page("Review Funding Request", $current_role, $_SESSION["full_name"]);
 
         <div class="lg:col-span-1">
             <div class="bg-white p-6 rounded-xl shadow-lg border border-gray-200 sticky top-8">
-                <h2 class="text-2xl font-bold text-gray-900 mb-4">Your Decision</h2>
-
+                
+                <!-- ✅ START: DYNAMIC DECISION BOX LOGIC (ALL NEW) -->
                 <?php
-                $is_decided = ($request[$role_column] === 'Approved' || $request[$role_column] === 'Rejected');
+                // Get all relevant statuses
+                $my_status = $request[$role_column]; // e.g., 'Pending', 'Approved'
+                $final_status = $request['final_status']; // e.g., 'Pending', 'Budget Processing', 'Rejected'
                 $is_ready_for_review = (!$previous_role_column || $request[$previous_role_column] === 'Approved');
                 
-                if ($is_decided):
+                // ===================================
+                // --- 1. AFO's "Budget Available" UI ---
+                // ===================================
+                if ($current_role === 'AFO' && $my_status === 'Approved' && $final_status === 'Budget Processing') {
                 ?>
-                <div class="bg-blue-50 border-l-4 border-blue-500 text-blue-700 p-4" role="alert">
-                    <p class="font-bold">Decision Recorded</p>
-                    <p>You have already submitted your decision (<?php echo htmlspecialchars($request[$role_column]); ?>) for this request.</p>
-                </div>
-                
-                <?php elseif (!$is_ready_for_review): ?>
-                <div class="bg-yellow-50 border-l-4 border-yellow-500 text-yellow-700 p-4" role="alert">
-                    <p class="font-bold">Awaiting Prior Approval</p>
-                    <p>This request must be approved by the <?php echo htmlspecialchars(array_search($previous_role_column, $approval_chain)); ?> before you can review it.</p>
-                </div>
-                
-                <?php elseif ($rejection_has_occurred): ?>
-                <div class="bg-red-50 border-l-4 border-red-500 text-red-700 p-4" role="alert">
-                    <p class="font-bold">Request Rejected</p>
-                    <p>This request has already been rejected by a previous signatory. No further action is needed.</p>
-                </div>
+                    <h2 class="text-2xl font-bold text-gray-900 mb-4">Budget Status</h2>
+                    <div class="bg-blue-50 border-l-4 border-blue-500 text-blue-700 p-4 mb-4" role="alert">
+                        <p class="font-bold">Budget Processing</p>
+                        <p>You have approved this request. It is now awaiting budget availability. Click below once the budget is ready for release.</p>
+                    </div>
+                    <form action="<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>?id=<?php echo $request_id; ?>" method="post">
+                        <button type="submit" name="decision" value="Available"
+                            class="w-full bg-green-600 text-white py-3 rounded-lg text-lg font-semibold hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition duration-150">
+                            Mark Budget as Available
+                        </button>
+                    </form>
 
-                <?php else: // Not decided and is ready for review ?>
-                <form action="<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>?id=<?php echo $request_id; ?>" method="post">
-                    <div class="mb-4">
-                        <label class="block text-sm font-medium text-gray-700 mb-2">Select your decision:</label>
-                        <div class="space-y-3">
-                            <label class="flex items-center cursor-pointer bg-green-50 hover:bg-green-100 p-3 rounded-lg border-2 border-green-300">
-                                <input type="radio" name="decision" value="Approved" class="form-radio h-5 w-5 text-green-600" required>
-                                <span class="ml-2 font-semibold text-green-700">Approve / Forward</span>
-                            </label>
-                            <label class="flex items-center cursor-pointer bg-red-50 hover:bg-red-100 p-3 rounded-lg border-2 border-red-300">
-                                <input type="radio" name="decision" value="Rejected" class="form-radio h-5 w-5 text-red-600" required>
-                                <span class="ml-2 font-semibold text-red-700">Reject</span>
-                            </label>
+                <?php
+                // ===================================
+                // --- 2. Request is 100% Completed (or Rejected) ---
+                // ===================================
+                } elseif ($final_status === 'Budget Available' || $final_status === 'Rejected') {
+                    $is_decided = ($my_status === 'Approved' || $my_status === 'Rejected');
+                ?>
+                    <h2 class="text-2xl font-bold text-gray-900 mb-4">Request Completed</h2>
+                    
+                    <?php if ($final_status === 'Budget Available'): ?>
+                        <div class="bg-green-100 border-l-4 border-green-500 text-green-700 p-4" role="alert">
+                            <p class="font-bold">Budget Available</p>
+                            <p>This request has been fully approved and the budget is available.</p>
                         </div>
+                    <?php else: // Rejected ?>
+                        <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4" role="alert">
+                            <p class="font-bold">Request Rejected</p>
+                            <p>This request was rejected. No further action is needed.</p>
+                        </div>
+                    <?php endif; ?>
+                    
+                    <?php if ($is_decided && $current_role !== 'AFO'): // Show this to non-AFO roles who already decided ?>
+                    <div class="bg-blue-50 border-l-4 border-blue-500 text-blue-700 p-4 mt-4" role="alert">
+                         <p class="font-bold">Your Decision</p>
+                         <p>You recorded a decision of (<?php echo htmlspecialchars($my_status); ?>) for this request.</p>
+                    </div>
+                    <?php endif; ?>
+
+                <?php
+                // ===================================
+                // --- 3. Awaiting Prior Approval ---
+                // ===================================
+                } elseif (!$is_ready_for_review) {
+                    $prev_role_name = array_search($previous_role_column, $approval_chain);
+                    if ($prev_role_name === false) $prev_role_name = 'a previous signatory';
+                ?>
+                    <h2 class="text-2xl font-bold text-gray-900 mb-4">Your Decision</h2>
+                    <div class="bg-yellow-50 border-l-4 border-yellow-500 text-yellow-700 p-4" role="alert">
+                        <p class="font-bold">Awaiting Prior Approval</p>
+                        <p>This request must be approved by the <?php echo htmlspecialchars($prev_role_name); ?> before you can review it.
+                        </p>
                     </div>
 
-                    <div class="mb-4">
-                        <label for="remark" class="block text-sm font-medium text-gray-700 mb-2">
-                            Remarks / Reason for Decision
-                        </label>
-                        <textarea id="remark" name="remark" rows="4" 
-                            class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition duration-150"
-                            placeholder="Enter justification..."><?php echo htmlspecialchars($remark); ?></textarea>
-                    </div>
+                <?php
+                // ===================================
+                // --- 4. My Turn to Review ---
+                // ===================================
+                } elseif ($my_status === 'Pending' && $final_status !== 'Rejected') {
+                ?>
+                    <h2 class="text-2xl font-bold text-gray-900 mb-4">Your Decision</h2>
+                    <form action="<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>?id=<?php echo $request_id; ?>" method="post">
+                        <div class="mb-4">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Select your decision:</label>
+                            <div class="space-y-3">
+                                <label class="flex items-center cursor-pointer bg-green-50 hover:bg-green-100 p-3 rounded-lg border-2 border-green-300">
+                                    <input type="radio" name="decision" value="Approved" class="form-radio h-5 w-5 text-green-600" required>
+                                    <span class="ml-2 font-semibold text-green-700">Approve</span>
+                                </label>
+                                <label class="flex items-center cursor-pointer bg-red-50 hover:bg-red-100 p-3 rounded-lg border-2 border-red-300">
+                                    <input type="radio" name="decision" value="Rejected" class="form-radio h-5 w-5 text-red-600" required>
+                                    <span class="ml-2 font-semibold text-red-700">Reject</span>
+                                </label>
+                            </div>
+                        </div>
 
-                    <button type="submit"
-                        class="w-full bg-indigo-600 text-white py-3 rounded-lg text-lg font-semibold hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150">
-                        Submit Decision
-                    </button>
-                </form>
-                <?php endif; ?>
+                        <div class="mb-4">
+                            <label for="remark" class="block text-sm font-medium text-gray-700 mb-2">
+                                Remarks / Reason for Decision
+                            </label>
+                            <textarea id="remark" name="remark" rows="4" 
+                                class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition duration-150"
+                                placeholder="Enter justification..."><?php echo htmlspecialchars($remark); ?></textarea>
+                        </div>
+
+                        <button type="submit"
+                            class="w-full bg-indigo-600 text-white py-3 rounded-lg text-lg font-semibold hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150">
+                            Submit Decision
+                        </button>
+                    </form>
+                
+                <?php 
+                // ===================================
+                // --- 5. Fallback (e.g., already decided but not final) ---
+                // ===================================
+                } else {
+                    $is_decided = ($my_status === 'Approved' || $my_status === 'Rejected');
+                    if ($is_decided) {
+                ?>
+                    <h2 class="text-2xl font-bold text-gray-900 mb-4">Decision Recorded</h2>
+                    <div class="bg-blue-50 border-l-4 border-blue-500 text-blue-700 p-4" role="alert">
+                         <p class="font-bold">Decision Recorded</p>
+                         <p>You have already submitted your decision (<?php echo htmlspecialchars($my_status); ?>) for this request. It is awaiting action from the next signatory.</p>
+                    </div>
+                <?php } else { ?>
+                    <h2 class="text-2xl font-bold text-gray-900 mb-4">Error</h2>
+                     <div class="bg-red-50 border-l-4 border-red-500 text-red-700 p-4" role="alert">
+                         <p class="font-bold">Unknown State</p>
+                         <p>The request is in an unknown state. Please contact the administrator.</p>
+                    </div>
+                <?php
+                    }
+                }
+                ?>
+                <!-- ✅ END: DYNAMIC DECISION BOX LOGIC -->
             </div>
         </div>
 
