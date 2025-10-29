@@ -116,7 +116,7 @@ if (!function_exists('get_status_class')) {
                 return 'bg-yellow-100 text-yellow-800 border-yellow-500';
             case 'Available': // ✅ NEW
                 return 'bg-emerald-100 text-emerald-800 border-emerald-500 font-bold';
-            case 'Processing': // ✅ NEW
+            case 'Budget Processing': // ✅ NEW
                 return 'bg-blue-100 text-blue-800 border-blue-500';
             default:
                 return 'bg-gray-100 text-gray-800 border-gray-500'; // Default fallback
@@ -152,8 +152,8 @@ if (empty($error_message) && in_array($target_tables, ['requests', 'both'])) {
     // ✅ MODIFIED AFO WHERE CLAUSE
     $funding_where_clause = "";
     if ($current_role === 'AFO') {
-        // AFO sees requests where afo_status is Pending OR final_status is Processing
-        $funding_where_clause = "(r.{$role_column} = 'Pending' OR r.final_status = 'Processing')";
+        // AFO sees requests where afo_status is Pending OR final_status is Budget Processing
+        $funding_where_clause = "(r.{$role_column} = 'Pending' OR r.final_status = 'Budget Processing')";
         // Must still ensure previous step (OSAFA) is approved
         if ($funding_previous_role_column) {
             $funding_where_clause .= " AND r.{$funding_previous_role_column} = 'Approved'";
@@ -378,8 +378,8 @@ if (isset($link) && $link instanceof mysqli) {
                                 
                                 // ✅ AFO LOGIC: Determine what status to show AFO
                                 $display_status_for_me = $request[$role_column]; // Default is 'Pending'
-                                if ($current_role === 'AFO' && $request['request_type'] === 'Funding' && $request['final_status'] === 'Processing') {
-                                    $display_status_for_me = 'Processing';
+                                if ($current_role === 'AFO' && $request['request_type'] === 'Funding' && $request['final_status'] === 'Budget Processing') {
+                                    $display_status_for_me = 'Budget Processing';
                                 }
                                 
                                 // Show my current status first, highlighted
