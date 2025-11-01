@@ -12,8 +12,8 @@ if(isset($_SESSION["loggedin"]) && $_SESSION["loggedin"] === true){
 require_once "db_config.php";
  
 // Define variables and initialize with empty values
-$full_name = $username = $org_id = $password = $confirm_password = "";
-$full_name_err = $username_err = $org_id_err = $password_err = $confirm_password_err = "";
+$full_name = $username = $org_id = $password = $confirm_password = $email = "";
+$full_name_err = $username_err = $org_id_err = $password_err = $confirm_password_err = $email_err = "";
 
 // --- 1. Fetch Organizations for Dropdown ---
 $organizations = [];
@@ -36,6 +36,32 @@ if($_SERVER["REQUEST_METHOD"] == "POST"){
         $full_name_err = "Please enter your full name.";
     } else{
         $full_name = trim($_POST["full_name"]);
+    }
+
+    // Validate Email
+    if(empty(trim($_POST["email"]))){
+        $email_err = "Please enter an email address.";
+    } elseif (!filter_var(trim($_POST["email"]), FILTER_VALIDATE_EMAIL)) {
+        $email_err = "Please enter a valid email address.";
+    } else {
+        // Check if email is already taken
+        $sql = "SELECT user_id FROM users WHERE email = ?";
+        if($stmt = mysqli_prepare($link, $sql)){
+            mysqli_stmt_bind_param($stmt, "s", $param_email);
+            $param_email = trim($_POST["email"]);
+
+            if(mysqli_stmt_execute($stmt)){
+                mysqli_stmt_store_result($stmt);
+                if(mysqli_stmt_num_rows($stmt) == 1){
+                    $email_err = "This email is already taken.";
+                } else{
+                    $email = trim($_POST["email"]);
+                }
+            } else{
+                echo "Oops! Something went wrong. Please try again later.";
+            }
+            mysqli_stmt_close($stmt);
+        }
     }
 
     // Validate Organization ID
@@ -94,23 +120,37 @@ if($_SERVER["REQUEST_METHOD"] == "POST"){
     }
     
     // Check input errors before inserting in database
-    if(empty($full_name_err) && empty($username_err) && empty($org_id_err) && empty($password_err) && empty($confirm_password_err)){
+    if(empty($full_name_err) && empty($email_err) && empty($username_err) && empty($org_id_err) && empty($password_err) && empty($confirm_password_err)){
         
-        // Prepare an insert statement
-        $sql = "INSERT INTO users (org_id, username, password, full_name, role) VALUES (?, ?, ?, ?, ?)";
+        // =================================================================
+        // === CRITICAL BUG FIX: Re-ordered SQL and bind_param to match ===
+        // =================================================================
+        
+        // Prepare an insert statement in a logical order
+        $sql = "INSERT INTO users (org_id, full_name, email, username, password, role) VALUES (?, ?, ?, ?, ?, ?)";
          
         if($stmt = mysqli_prepare($link, $sql)){
             // Hash the password for security
             $hashed_password = password_hash($password, PASSWORD_DEFAULT);
             $role = 'Officer'; // Default role for new registrations
 
-            mysqli_stmt_bind_param($stmt, "issss", $param_org_id, $param_username, $param_password, $param_full_name, $param_role);
+            // Bind params to match the SQL query order
+            // (i)nt org_id, (s)tring full_name, (s)tring email, (s)tring username, (s)tring password, (s)tring role
+            mysqli_stmt_bind_param($stmt, "isssss", 
+                $param_org_id, 
+                $param_full_name, 
+                $param_email, 
+                $param_username, 
+                $param_password, 
+                $param_role
+            );
             
             // Set parameters
             $param_org_id = $org_id;
+            $param_full_name = $full_name;
+            $param_email = $email;
             $param_username = $username;
             $param_password = $hashed_password;
-            $param_full_name = $full_name;
             $param_role = $role;
             
             // Attempt to execute the prepared statement
@@ -181,7 +221,7 @@ if($_SERVER["REQUEST_METHOD"] == "POST"){
 
         <!-- Registration Form -->
         <form action="<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>" method="post">
-            
+
             <!-- Full Name Field -->
             <div class="mb-5">
                 <label for="full_name" class="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
@@ -253,6 +293,21 @@ if($_SERVER["REQUEST_METHOD"] == "POST"){
                 </div>
             </div>
             
+            <!-- === FIELD MOVED HERE === -->
+            <!-- Email Address Field -->
+            <div class="mb-6">
+                <label for="email" class="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+                <input type="email" name="email" id="email" 
+                       class="w-full px-4 py-2 border rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 
+                              <?php echo (!empty($email_err)) ? 'border-red-500' : 'border-gray-300'; ?>" 
+                       value="<?php echo htmlspecialchars($email); ?>" 
+                       placeholder="e.g., juandelacruz@auf.edu.ph">
+                <?php if (!empty($email_err)): ?>
+                    <p class="text-red-500 text-xs mt-1"><?php echo $email_err; ?></p>
+                <?php endif; ?>
+            </div>
+            <!-- === END OF MOVED FIELD === -->
+
             <!-- Submit Button -->
             <button type="submit" 
                     class="w-full flex justify-center py-2 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out mt-4">

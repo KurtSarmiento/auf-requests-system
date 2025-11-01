@@ -66,6 +66,12 @@ $role_data = isset($role_map[$current_role]) ? $role_map[$current_role] : null;
 // --- 2. HANDLE FORM SUBMISSION (POST) ---
 // ===================================
 if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0 && $role_data) {
+    
+    // === START: NEW EMAIL LOGIC (Include) ===
+    // Include the email functions at the start of the POST handling
+    require_once 'email.php';
+    // === END: NEW EMAIL LOGIC (Include) ===
+
     $decision = $_POST['decision'];
     $remark_text = trim($_POST['remark']);
 
@@ -105,7 +111,31 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0 && $role_data) {
         mysqli_stmt_bind_param($stmt, "sssi", $decision, $remark_text, $next_notification_status, $request_id);
         
         if (mysqli_stmt_execute($stmt)) {
+            
+            // === START: NEW EMAIL LOGIC (Rejection) ===
+            // We send an email ONLY if the decision is 'Rejected'
+            if ($decision === 'Rejected') {
+                // $request_id is the venue_request_id
+                $officerDetails = getOfficerDetails($link, $request_id, 'venue'); 
+                
+                if ($officerDetails) {
+                    $recipientEmail = $officerDetails['email'];
+                    $recipientName = $officerDetails['full_name'];
+                    $activityName = $officerDetails['activity_name']; // This is the alias for 'title'
+
+                    $subject = "Update on your Venue Request: Rejected";
+                    $body = "Dear $recipientName,<br><br>
+                            Your venue request for <strong>'$activityName'</strong> (ID: $request_id) has been <strong>rejected</strong> by the $current_role.<br><br>
+                            <strong>Reason:</strong> " . ($remark_text ?: 'No remarks provided.') . "<br><br>
+                            Please check the system for more details.";
+                    
+                    sendNotificationEmail($recipientEmail, $subject, $body);
+                }
+            }
+            // === END: NEW EMAIL LOGIC (Rejection) ===
+
             $success_message = "Your decision ($decision) has been recorded successfully.";
+
         } else {
             $error_message = "Error: Could not execute the update. " . mysqli_error($link);
         }
@@ -368,7 +398,7 @@ start_page("Review Venue Request", $current_role, $_SESSION["full_name"]);
                 }
                 
                 if (!$has_equipment) {
-                    echo "<i class_='text-gray-500 col-span-full p-3'>No specific equipment quantities were listed.</i>";
+                    echo "<i class='text-gray-500 col-span-full p-3'>No specific equipment quantities were listed.</i>";
                 }
                 
                 echo '</div>'; // end grid

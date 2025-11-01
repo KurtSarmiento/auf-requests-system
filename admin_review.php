@@ -86,6 +86,11 @@ $approval_chain = [
 // ===================================
 if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
     
+    // === START: NEW EMAIL LOGIC (Include) ===
+    // Include the email functions at the start of the POST handling
+    require_once 'email.php';
+    // === END: NEW EMAIL LOGIC (Include) ===
+
     $decision = $_POST['decision'];
     $remark_text = trim($_POST['remark'] ?? ''); // remark might not exist on 'Available'
 
@@ -107,6 +112,24 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
             mysqli_stmt_bind_param($stmt, "i", $request_id);
             if (mysqli_stmt_execute($stmt)) {
                 $success_message = "Success! The budget has been marked as available and the officer has been notified.";
+
+                // === START: NEW EMAIL LOGIC (Budget Available) ===
+                $officerDetails = getOfficerDetails($link, $request_id, 'funding');
+                if ($officerDetails) {
+                    $recipientEmail = $officerDetails['email'];
+                    $recipientName = $officerDetails['full_name'];
+                    // Note: 'activity_name' is the alias for 'title' in our getOfficerDetails function
+                    $activityName = $officerDetails['activity_name']; 
+
+                    $subject = "Budget Available for Your Request (ID: $request_id)";
+                    $body = "Dear $recipientName,<br><br>
+                            Good news! The budget for your request <strong>'$activityName'</strong> (ID: $request_id) is now <strong>available for claiming</strong>.<br><br>
+                            Please coordinate with the AFO for the next steps.";
+
+                    sendNotificationEmail($recipientEmail, $subject, $body);
+                }
+                // === END: NEW EMAIL LOGIC (Budget Available) ===
+
             } else {
                 $error_message = "Error: Could not mark budget as available. " . mysqli_error($link);
             }
@@ -154,12 +177,34 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
                     {$final_status_sql}
                 WHERE 
                     request_id = ?";
-                        
+                            
         if ($stmt = mysqli_prepare($link, $sql)) {
             mysqli_stmt_bind_param($stmt, "sssi", $decision, $remark_text, $next_notification_status, $request_id);
             
             if (mysqli_stmt_execute($stmt)) {
                 $success_message = "Your decision ($decision) has been recorded successfully.";
+
+                // === START: NEW EMAIL LOGIC (Rejection) ===
+                // We send an email ONLY if the decision is 'Rejected'
+                if ($decision === 'Rejected') {
+                    $officerDetails = getOfficerDetails($link, $request_id, 'funding');
+                    
+                    if ($officerDetails) {
+                        $recipientEmail = $officerDetails['email'];
+                        $recipientName = $officerDetails['full_name'];
+                        $activityName = $officerDetails['activity_name']; // Alias for 'title'
+
+                        $subject = "Update on your Funding Request: Rejected";
+                        $body = "Dear $recipientName,<br><br>
+                                Your funding request for <strong>'$activityName'</strong> (ID: $request_id) has been <strong>rejected</strong> by the $current_role.<br><br>
+                                <strong>Reason:</strong> " . ($remark_text ?: 'No remarks provided.') . "<br><br>
+                                Please check the system for more details.";
+                        
+                        sendNotificationEmail($recipientEmail, $subject, $body);
+                    }
+                }
+                // === END: NEW EMAIL LOGIC (Rejection) ===
+
             } else {
                 $error_message = "Error: Could not execute the update. " . mysqli_error($link);
             }

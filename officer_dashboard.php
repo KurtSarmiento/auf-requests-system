@@ -36,7 +36,7 @@ if ($stmt = mysqli_prepare($link, $org_sql)) {
 $sql_counts = "
     SELECT 
         COUNT(*) AS total_requests,
-        SUM(CASE WHEN final_status = 'Budget Available' THEN 1 ELSE 0 END) AS approved_count,
+        SUM(CASE WHEN final_status IN ('Budget Available', 'Approved') THEN 1 ELSE 0 END) AS approved_count,
         SUM(CASE WHEN final_status IN ('Pending', 'Budget Processing') THEN 1 ELSE 0 END) AS pending_count,
         SUM(CASE WHEN final_status = 'Rejected' THEN 1 ELSE 0 END) AS rejected_count
     FROM (
