@@ -17,14 +17,13 @@ if (!isset($_SESSION["loggedin"]) || $_SESSION["loggedin"] !== true || !in_array
     exit;
 }
 
-// --- Helper for CSS colors (moved to layout_template.php, but good to have a fallback)
+// --- Helper for CSS colors
 if (!function_exists('get_status_class')) {
     function get_status_class($status) {
         switch ($status) {
             case 'Approved': return 'bg-green-100 text-green-800 border-green-500';
             case 'Rejected': return 'bg-red-100 text-red-800 border-red-500';
             case 'Pending':  return 'bg-yellow-100 text-yellow-800 border-yellow-500';
-            // ✅ ADDED NEW STATUSES
             case 'Budget Processing': return 'bg-blue-100 text-blue-800 border-blue-500';
             case 'Budget Available': return 'bg-emerald-100 text-emerald-800 border-emerald-500';
             default:         return 'bg-gray-100 text-gray-800 border-gray-500';
@@ -87,7 +86,7 @@ $approval_chain = [
 if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
     
     // === START: NEW EMAIL LOGIC (Include) ===
-    // Include the email functions at the start of the POST handling
+    // Using 'email.php' as seen in your provided code
     require_once 'email.php';
     // === END: NEW EMAIL LOGIC (Include) ===
 
@@ -95,11 +94,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
     $remark_text = trim($_POST['remark'] ?? ''); // remark might not exist on 'Available'
 
     // ✅ START AFO "Mark as Budget Available" LOGIC
-    // This is the new, second-stage approval by AFO
     if ($decision === 'Available' && $current_role === 'AFO') {
         
-        // This is the FINAL step.
-        // Make sure you have added `date_budget_available` (DATETIME, NULLable) to your `requests` table
         $sql = "UPDATE requests 
                 SET 
                     final_status = 'Budget Available',
@@ -113,22 +109,29 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
             if (mysqli_stmt_execute($stmt)) {
                 $success_message = "Success! The budget has been marked as available and the officer has been notified.";
 
-                // === START: NEW EMAIL LOGIC (Budget Available) ===
-                $officerDetails = getOfficerDetails($link, $request_id, 'funding');
+                // === START: UPGRADED EMAIL LOGIC (Budget Available) ===
+                $officerDetails = getOfficerDetails($link, $request_id, 'funding'); // This now gets more data
                 if ($officerDetails) {
                     $recipientEmail = $officerDetails['email'];
                     $recipientName = $officerDetails['full_name'];
-                    // Note: 'activity_name' is the alias for 'title' in our getOfficerDetails function
-                    $activityName = $officerDetails['activity_name']; 
-
+                    
                     $subject = "Budget Available for Your Request (ID: $request_id)";
-                    $body = "Dear $recipientName,<br><br>
-                            Good news! The budget for your request <strong>'$activityName'</strong> (ID: $request_id) is now <strong>available for claiming</strong>.<br><br>
-                            Please coordinate with the AFO for the next steps.";
+                    $greeting = "Dear $recipientName,";
+                    $message = "Good news! The budget for your request is now <strong>available for claiming</strong>. Please see the details below and feel free to reach out if you have any questions.";
+                    
+                    // NEW: Create the details array
+                    $details = [
+                        "Request Title" => $officerDetails['activity_name'],
+                        "Request Type" => $officerDetails['type'],
+                        "Amount" => "PHP " . number_format($officerDetails['amount'], 2),
+                        "Date Submitted" => date('F j, Y, g:i A', strtotime($officerDetails['date_submitted']))
+                    ];
 
+                    // NEW: Use the template builder
+                    $body = buildEmailTemplate($greeting, $message, $details);
                     sendNotificationEmail($recipientEmail, $subject, $body);
                 }
-                // === END: NEW EMAIL LOGIC (Budget Available) ===
+                // === END: UPGRADED EMAIL LOGIC (Budget Available) ===
 
             } else {
                 $error_message = "Error: Could not mark budget as available. " . mysqli_error($link);
@@ -150,7 +153,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
                 case 'Adviser': $next_notification_status = 'Awaiting Dean Review'; break;
                 case 'Dean':    $next_notification_status = 'Awaiting OSAFA Review'; break;
                 case 'OSAFA': $next_notification_status = 'Awaiting AFO Review'; break;
-                // ✅ AFO LOGIC: Change 'Budget Available' to 'Budget Processing'
                 case 'AFO':   $next_notification_status = 'Budget Processing'; break;
             }
         } else {
@@ -158,8 +160,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
             $next_notification_status = "Rejected by " . $current_role;
         }
         
-        // ✅ AFO LOGIC: Set final_status
-        // Set final_status if this is a rejection, or if AFO is *first* approving
         $final_status_sql = "";
         if ($decision === 'Rejected') {
             $final_status_sql = ", final_status = 'Rejected'";
@@ -167,7 +167,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
             $final_status_sql = ", final_status = 'Budget Processing'"; // Not final yet
         }
 
-        // --- UPDATED SQL: Using {$date_column} (e.g., adviser_decision_date) ---
         $sql = "UPDATE requests 
                 SET 
                     {$role_column} = ?,
@@ -184,26 +183,31 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
             if (mysqli_stmt_execute($stmt)) {
                 $success_message = "Your decision ($decision) has been recorded successfully.";
 
-                // === START: NEW EMAIL LOGIC (Rejection) ===
-                // We send an email ONLY if the decision is 'Rejected'
+                // === START: UPGRADED EMAIL LOGIC (Rejection) ===
                 if ($decision === 'Rejected') {
-                    $officerDetails = getOfficerDetails($link, $request_id, 'funding');
-                    
+                    $officerDetails = getOfficerDetails($link, $request_id, 'funding'); // Gets more data
                     if ($officerDetails) {
                         $recipientEmail = $officerDetails['email'];
                         $recipientName = $officerDetails['full_name'];
-                        $activityName = $officerDetails['activity_name']; // Alias for 'title'
-
-                        $subject = "Update on your Funding Request: Rejected";
-                        $body = "Dear $recipientName,<br><br>
-                                Your funding request for <strong>'$activityName'</strong> (ID: $request_id) has been <strong>rejected</strong> by the $current_role.<br><br>
-                                <strong>Reason:</strong> " . ($remark_text ?: 'No remarks provided.') . "<br><br>
-                                Please check the system for more details.";
                         
+                        $subject = "Update on Your Funding Request: Rejected (ID: $request_id)";
+                        $greeting = "Dear $recipientName,";
+                        $message = "Your funding request has been <strong>rejected</strong> by the $current_role. Please see the details and reason below.";
+                        
+                        // NEW: Create the details array
+                        $details = [
+                            "Request Title" => $officerDetails['activity_name'],
+                            "Request Type" => $officerDetails['type'],
+                            "Amount" => "PHP " . number_format($officerDetails['amount'], 2),
+                            "Date Submitted" => date('F j, Y, g:i A', strtotime($officerDetails['date_submitted']))
+                        ];
+
+                        // NEW: Use template builder with the reason
+                        $body = buildEmailTemplate($greeting, $message, $details, "Reason for Rejection", $remark_text);
                         sendNotificationEmail($recipientEmail, $subject, $body);
                     }
                 }
-                // === END: NEW EMAIL LOGIC (Rejection) ===
+                // === END: UPGRADED EMAIL LOGIC (Rejection) ===
 
             } else {
                 $error_message = "Error: Could not execute the update. " . mysqli_error($link);
@@ -218,8 +222,13 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
 // ===================================
 // --- 3. FETCH REQUEST DATA (GET) ---
 // ===================================
+// (This entire section is unchanged from your original file)
 if ($request_id > 0) {
-    // --- UPDATED SQL: Select all _decision_date columns + date_budget_available ---
+    // Check for success from POST redirect (if we add one)
+    if (isset($_GET['success']) && $_GET['success'] == '1' && empty($success_message)) {
+        $success_message = "Your decision has been recorded successfully.";
+    }
+
     $sql = "SELECT 
                 r.*, 
                 u.full_name, 
@@ -264,7 +273,6 @@ if ($request_id > 0) {
     
     // Check if the request is actually ready for review by this role
     if ($request && $previous_role_column && $request[$previous_role_column] !== 'Approved') {
-        // ✅ AFO LOGIC: Don't show this error if AFO is in 'Budget Processing' stage
         if (!($current_role === 'AFO' && $request['final_status'] === 'Budget Processing')) {
             $error_message = "This request is not yet ready for your review. It is awaiting approval from a previous signatory.";
         }
@@ -295,6 +303,7 @@ start_page("Review Funding Request", $current_role, $_SESSION["full_name"]);
     <?php endif; ?>
 
     <?php if ($request): ?>
+    <!-- The entire HTML display section is unchanged -->
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
         <div class="lg:col-span-2 space-y-6">
@@ -318,9 +327,6 @@ start_page("Review Funding Request", $current_role, $_SESSION["full_name"]);
                 <h3 class="text-xl font-semibold text-gray-800 mb-4">Request Progress</h3>
                 <div class="flex items-start space-x-4 overflow-x-auto py-2">
                     <?php 
-                    // ===================================
-                    // --- NEW REJECTION LOGIC (START) ---
-                    // ===================================
                     $rejection_has_occurred = false; 
                     foreach ($approval_chain as $role_name => $status_col):
                         
@@ -358,14 +364,12 @@ start_page("Review Funding Request", $current_role, $_SESSION["full_name"]);
                             </div>
                         </div>
                     <?php endforeach; 
-                    // --- NEW REJECTION LOGIC (END) ---
                     ?>
                 </div>
                 
                 <div class="mt-4 pt-4 border-t border-gray-200">
                     <h4 class="text-md font-semibold text-gray-800 mb-2">Final Budget Status</h4>
                     <?php
-                        // ✅ MODIFIED: Show 'Budget Processing' and 'Budget Available'
                         $final_status_display = $request['notification_status'];
                         $final_status_class = get_status_class($request['final_status']);
 
@@ -435,16 +439,12 @@ start_page("Review Funding Request", $current_role, $_SESSION["full_name"]);
         <div class="lg:col-span-1">
             <div class="bg-white p-6 rounded-xl shadow-lg border border-gray-200 sticky top-8">
                 
-                <!-- ✅ START: DYNAMIC DECISION BOX LOGIC (ALL NEW) -->
+                <!-- This entire dynamic decision box is unchanged -->
                 <?php
-                // Get all relevant statuses
-                $my_status = $request[$role_column]; // e.g., 'Pending', 'Approved'
-                $final_status = $request['final_status']; // e.g., 'Pending', 'Budget Processing', 'Rejected'
+                $my_status = $request[$role_column];
+                $final_status = $request['final_status'];
                 $is_ready_for_review = (!$previous_role_column || $request[$previous_role_column] === 'Approved');
                 
-                // ===================================
-                // --- 1. AFO's "Budget Available" UI ---
-                // ===================================
                 if ($current_role === 'AFO' && $my_status === 'Approved' && $final_status === 'Budget Processing') {
                 ?>
                     <h2 class="text-2xl font-bold text-gray-900 mb-4">Budget Status</h2>
@@ -460,9 +460,6 @@ start_page("Review Funding Request", $current_role, $_SESSION["full_name"]);
                     </form>
 
                 <?php
-                // ===================================
-                // --- 2. Request is 100% Completed (or Rejected) ---
-                // ===================================
                 } elseif ($final_status === 'Budget Available' || $final_status === 'Rejected') {
                     $is_decided = ($my_status === 'Approved' || $my_status === 'Rejected');
                 ?>
@@ -480,7 +477,7 @@ start_page("Review Funding Request", $current_role, $_SESSION["full_name"]);
                         </div>
                     <?php endif; ?>
                     
-                    <?php if ($is_decided && $current_role !== 'AFO'): // Show this to non-AFO roles who already decided ?>
+                    <?php if ($is_decided && $current_role !== 'AFO'): ?>
                     <div class="bg-blue-50 border-l-4 border-blue-500 text-blue-700 p-4 mt-4" role="alert">
                          <p class="font-bold">Your Decision</p>
                          <p>You recorded a decision of (<?php echo htmlspecialchars($my_status); ?>) for this request.</p>
@@ -488,9 +485,6 @@ start_page("Review Funding Request", $current_role, $_SESSION["full_name"]);
                     <?php endif; ?>
 
                 <?php
-                // ===================================
-                // --- 3. Awaiting Prior Approval ---
-                // ===================================
                 } elseif (!$is_ready_for_review) {
                     $prev_role_name = array_search($previous_role_column, $approval_chain);
                     if ($prev_role_name === false) $prev_role_name = 'a previous signatory';
@@ -503,9 +497,6 @@ start_page("Review Funding Request", $current_role, $_SESSION["full_name"]);
                     </div>
 
                 <?php
-                // ===================================
-                // --- 4. My Turn to Review ---
-                // ===================================
                 } elseif ($my_status === 'Pending' && $final_status !== 'Rejected') {
                 ?>
                     <h2 class="text-2xl font-bold text-gray-900 mb-4">Your Decision</h2>
@@ -540,9 +531,6 @@ start_page("Review Funding Request", $current_role, $_SESSION["full_name"]);
                     </form>
                 
                 <?php 
-                // ===================================
-                // --- 5. Fallback (e.g., already decided but not final) ---
-                // ===================================
                 } else {
                     $is_decided = ($my_status === 'Approved' || $my_status === 'Rejected');
                     if ($is_decided) {
@@ -562,7 +550,6 @@ start_page("Review Funding Request", $current_role, $_SESSION["full_name"]);
                     }
                 }
                 ?>
-                <!-- ✅ END: DYNAMIC DECISION BOX LOGIC -->
             </div>
         </div>
 

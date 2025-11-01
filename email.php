@@ -18,8 +18,7 @@ require 'vendor/autoload.php';
 function sendNotificationEmail($toEmail, $subject, $body) {
     $mail = new PHPMailer(true);
 
-    // --- IMPORTANT: CONFIGURE YOUR SMTP SETTINGS HERE ---
-    // This example uses Gmail. You MUST update this with your mail server details.
+    // --- YOUR SMTP SETTINGS (Unchanged) ---
     try {
         //Server settings
         $mail->isSMTP();                                    // Send using SMTP
@@ -43,14 +42,14 @@ function sendNotificationEmail($toEmail, $subject, $body) {
         $mail->send();
         return true;
     } catch (Exception $e) {
-        // You can log this error instead of just echoing it
+        // You can log this error
         // error_log("Message could not be sent. Mailer Error: {$mail->ErrorInfo}");
         return false;
     }
 }
 
 /**
- * Gets the requesting officer's details (email, name, activity name)
+ * Gets all request details for building a notification email.
  *
  * @param mysqli $link          The database connection from db_config.php
  * @param int $requestId        The ID of the request
@@ -61,18 +60,37 @@ function getOfficerDetails($link, $requestId, $requestType = 'funding') {
     $details = null;
 
     if ($requestType === 'funding') {
-        // For funding, we join users and requests. The activity name is in 'title'
-        $sql = "SELECT u.email, u.full_name, r.title AS activity_name 
+        // === START: UPGRADED FUNDING QUERY ===
+        // Now fetches amount, type, and date_submitted
+        $sql = "SELECT 
+                    u.email, 
+                    u.full_name, 
+                    r.title AS activity_name,
+                    r.amount,
+                    r.type,
+                    r.date_submitted
                 FROM users u 
                 JOIN requests r ON u.user_id = r.user_id 
                 WHERE r.request_id = ?";
+        // === END: UPGRADED FUNDING QUERY ===
+
     } else { // 'venue'
-        // --- THIS BLOCK IS NOW CORRECTED ---
-        // It now selects 'v.title' and searches by 'v.venue_request_id'
-        $sql = "SELECT u.email, u.full_name, v.title AS activity_name 
+        // === START: UPGRADED VENUE QUERY ===
+        // Now fetches all date, time, and venue name details
+        $sql = "SELECT 
+                    u.email, 
+                    u.full_name, 
+                    v.title AS activity_name,
+                    v.activity_date,
+                    v.start_time,
+                    v.end_time,
+                    v.venue_name,
+                    v.venue_other_name,
+                    v.date_submitted
                 FROM users u 
                 JOIN venue_requests v ON u.user_id = v.user_id 
                 WHERE v.venue_request_id = ?";
+        // === END: UPGRADED VENUE QUERY ===
     }
 
     if ($stmt = mysqli_prepare($link, $sql)) {
@@ -85,5 +103,57 @@ function getOfficerDetails($link, $requestId, $requestType = 'funding') {
         mysqli_stmt_close($stmt);
     }
     return $details;
+}
+
+
+/**
+ * Helper function to create a clean HTML email template.
+ * @param string $greeting - The opening line (e.g., "Dear John Doe,")
+ * @param string $message - The main paragraph of text.
+ * @param array $details - An associative array of details (e.g., ['Title' => 'My Event'])
+ * @param string $reason_heading - (Optional) e.g., "Reason for Rejection"
+ * @param string $reason_text - (Optional) The remark text.
+ * @return string - A full HTML email body.
+ */
+function buildEmailTemplate($greeting, $message, $details = [], $reason_heading = "", $reason_text = "") {
+    $body = "<!DOCTYPE html><html><head><style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; }
+        .container { width: 90%; max-width: 600px; margin: 20px auto; padding: 20px; border: 1px solid #ddd; border-radius: 8px; }
+        .header { font-size: 24px; font-weight: bold; color: #1e3a8a; }
+        .content { margin-top: 20px; }
+        .details-table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        .details-table th, .details-table td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+        .details-table th { background-color: #f9f9f9; width: 30%; }
+        .reason-box { margin-top: 20px; padding: 15px; background-color: #fffbe6; border: 1px solid #fde68a; border-radius: 4px; }
+        .reason-box strong { color: #b45309; }
+        .footer { margin-top: 20px; font-size: 12px; color: #777; }
+    </style></head><body>";
+    
+    $body .= "<div class='container'>";
+    $body .= "<div class='header'>AUF Request System Update</div>";
+    $body .= "<div class='content'>";
+    $body .= "<p>" . htmlspecialchars($greeting) . "</p>";
+    $body .= "<p>" . $message . "</p>"; // This message can contain HTML
+
+    if (!empty($details)) {
+        $body .= "<table class='details-table'>";
+        $body .= "<tbody>";
+        foreach ($details as $key => $value) {
+            $body .= "<tr><th>" . htmlspecialchars($key) . "</th><td>" . htmlspecialchars($value) . "</td></tr>";
+        }
+        $body .= "</tbody></table>";
+    }
+
+    if (!empty($reason_heading) && !empty($reason_text)) {
+        $body .= "<div class='reason-box'>";
+        $body .= "<strong>" . htmlspecialchars($reason_heading) . ":</strong>";
+        $body .= "<p style='margin-top: 5px;'>" . nl2br(htmlspecialchars($reason_text)) . "</p>";
+        $body .= "</div>";
+    }
+
+    $body .= "<p class='footer'>This is an automated message. Please do not reply.</p>";
+    $body .= "</div></div></body></html>";
+    
+    return $body;
 }
 ?>
