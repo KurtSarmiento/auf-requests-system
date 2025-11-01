@@ -66,12 +66,6 @@ $role_data = isset($role_map[$current_role]) ? $role_map[$current_role] : null;
 // --- 2. HANDLE FORM SUBMISSION (POST) ---
 // ===================================
 if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0 && $role_data) {
-    
-    // === START: NEW EMAIL LOGIC (Include) ===
-    // Include the email functions at the start of the POST handling
-    require_once 'email.php';
-    // === END: NEW EMAIL LOGIC (Include) ===
-
     $decision = $_POST['decision'];
     $remark_text = trim($_POST['remark']);
 
@@ -106,35 +100,54 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0 && $role_data) {
                 {$final_status_sql}
             WHERE 
                 venue_request_id = ?";
-                
+            
     if ($stmt = mysqli_prepare($link, $sql)) {
         mysqli_stmt_bind_param($stmt, "sssi", $decision, $remark_text, $next_notification_status, $request_id);
         
         if (mysqli_stmt_execute($stmt)) {
             
-            // === START: NEW EMAIL LOGIC (Rejection) ===
-            // We send an email ONLY if the decision is 'Rejected'
-            if ($decision === 'Rejected') {
-                // $request_id is the venue_request_id
-                $officerDetails = getOfficerDetails($link, $request_id, 'venue'); 
-                
-                if ($officerDetails) {
-                    $recipientEmail = $officerDetails['email'];
-                    $recipientName = $officerDetails['full_name'];
-                    $activityName = $officerDetails['activity_name']; // This is the alias for 'title'
+            // ===============================================
+            // === START: NEW EMAIL LOGIC (Step 5)         ===
+            // ===============================================
+            require_once 'email.php'; // Include email functions
 
+            // Get the details we need
+            $officerDetails = getOfficerDetails($link, $request_id, 'venue');
+            
+            if ($officerDetails) {
+                $recipientEmail = $officerDetails['email'];
+                $recipientName = $officerDetails['full_name'];
+                // Use the activity name from the 'title' column
+                $activityName = $officerDetails['activity_name']; 
+                
+                // Trigger 1: Request is Rejected by ANYONE
+                if ($decision === 'Rejected') {
+                    $remark_text_email = !empty($_POST['remark']) ? htmlspecialchars($_POST['remark']) : 'No remarks provided.';
                     $subject = "Update on your Venue Request: Rejected";
                     $body = "Dear $recipientName,<br><br>
                             Your venue request for <strong>'$activityName'</strong> (ID: $request_id) has been <strong>rejected</strong> by the $current_role.<br><br>
-                            <strong>Reason:</strong> " . ($remark_text ?: 'No remarks provided.') . "<br><br>
+                            <strong>Reason:</strong> $remark_text_email<br><br>
                             Please check the system for more details.";
                     
                     sendNotificationEmail($recipientEmail, $subject, $body);
                 }
+                // Trigger 2: Request is Approved by the FINAL approver (VP Admin)
+                else if ($decision === 'Approved' && $current_role === 'VP for Administration') {
+                    $subject = "Your Venue Request is Approved (ID: $request_id)";
+                    $body = "Dear $recipientName,<br><br>
+                            Good news! Your venue request for <strong>'$activityName'</strong> (ID: $request_id) has been <strong>fully approved</strong>.<br><br>
+                            The venue is now reserved for your activity.";
+
+                    sendNotificationEmail($recipientEmail, $subject, $body);
+                }
             }
-            // === END: NEW EMAIL LOGIC (Rejection) ===
+            // ===============================================
+            // === END: NEW EMAIL LOGIC                    ===
+            // ===============================================
 
             $success_message = "Your decision ($decision) has been recorded successfully.";
+            header("location: admin_request_list.php?decision_success=1");
+            exit();
 
         } else {
             $error_message = "Error: Could not execute the update. " . mysqli_error($link);
@@ -346,8 +359,8 @@ start_page("Review Venue Request", $current_role, $_SESSION["full_name"]);
                         <?php foreach ($schedule as $item): ?>
                         <li class="py-4">
                             <strong class="text-gray-900"><?php echo htmlspecialchars($item['venue_name']); ?></strong>
-                            <?php if (!empty($item['venue_other_name'])): ?>
-                            <span class="text-gray-600">(<?php echo htmlspecialchars($item['venue_other_name']); ?>)</span>
+                            <?php if (!empty($request['venue_other_name']) && $request['venue_name'] === 'Other (Specify Below)'): ?>
+                            <span class="text-gray-600">(Specified: <?php echo htmlspecialchars($request['venue_other_name']); ?>)</span>
                             <?php endif; ?>
                             <div class="text-sm text-gray-600 mt-1">
                                 <span class="font-medium"><?php echo date('D, M d, Y', strtotime($item['activity_date'])); ?></span>
@@ -398,7 +411,7 @@ start_page("Review Venue Request", $current_role, $_SESSION["full_name"]);
                 }
                 
                 if (!$has_equipment) {
-                    echo "<i class='text-gray-500 col-span-full p-3'>No specific equipment quantities were listed.</i>";
+                    echo "<i class_='text-gray-500 col-span-full p-3'>No specific equipment quantities were listed.</i>";
                 }
                 
                 echo '</div>'; // end grid

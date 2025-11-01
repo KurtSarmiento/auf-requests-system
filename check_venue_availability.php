@@ -1,39 +1,25 @@
 <?php
 // check_venue_availability.php
+// This file is for the *visual calendar* only.
 
 require_once "db_config.php";
-
 header('Content-Type: application/json');
 
-if (!isset($_GET['venue_name']) || empty($_GET['venue_name'])) {
-    echo json_encode(['error' => 'Venue name is required.']);
-    exit;
-}
+// We will always return an empty list of booked dates [].
+// This is the correct logic for a time-slot system.
+//
+// WHY IS THIS EMPTY?
+// Because this file only controls which *days* are grayed out on the calendar.
+// If we grayed out the whole day (like we did before), a user could
+// not book a 1:00 PM slot just because someone else booked an 8:00 AM slot.
+//
+// By letting the user pick *any* day, they can then submit their
+// desired time (e.g., "1:00 PM - 5:00 PM").
+//
+// The *other* file, `request_venue.php`, is the "smart guard" that
+// will check their specific time and (if needed) give them the helpful
+// error: "This venue is booked from 8:00 AM to 12:00 PM."
 
-$venue_name = trim($_GET['venue_name']);
-$booked_dates = [];
-
-// 1. Fetch dates from the new venue_schedule table
-// We only check for dates where there is at least one entry.
-$sql = "SELECT DISTINCT activity_date FROM venue_schedule WHERE venue_name = ? AND activity_date >= CURDATE()";
-
-if ($stmt = mysqli_prepare($link, $sql)) {
-    mysqli_stmt_bind_param($stmt, "s", $venue_name);
-    
-    if (mysqli_stmt_execute($stmt)) {
-        $result = mysqli_stmt_get_result($stmt);
-        
-        while ($row = mysqli_fetch_assoc($result)) {
-            // Collects all unique booked dates (YYYY-MM-DD)
-            $booked_dates[] = $row['activity_date'];
-        }
-        mysqli_free_result($result);
-    }
-    mysqli_stmt_close($stmt);
-}
-
-mysqli_close($link);
-
-// 2. Return the list of booked dates to the JavaScript
-echo json_encode(['booked_dates' => $booked_dates]);
+echo json_encode(['booked_dates' => []]);
+exit;
 ?>

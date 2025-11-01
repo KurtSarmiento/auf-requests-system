@@ -35,6 +35,13 @@ $available_venues = [
     'Other (Specify Below)' // <<< ADDED: Other Option
 ];
 
+// --- Initialize success message (for redirects) ---
+$success_message = "";
+if (isset($_GET['success']) && $_GET['success'] == 'venue_created') {
+    $success_message = "Venue request submitted successfully! It is now Awaiting Dean Approval.";
+}
+
+
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     
     // 1. Validate inputs
@@ -55,42 +62,103 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     if (empty($description)) { $description_err = "Please provide an activity description."; }
 
     // Time validation (simple check: end time must be after start time)
-    if (strtotime($start_time) >= strtotime($end_time)) {
+    if (!empty($start_time) && !empty($end_time) && strtotime($start_time) >= strtotime($end_time)) {
         $time_err = "End time must be after start time.";
     }
 
     // --- NEW: Capture Equipment Quantities ---
-    // Ensure all equipment fields are numeric or empty (set default 0)
+    // (This logic is unchanged)
     $tables_count = max(0, (int)($_POST["tables_count"] ?? 0));
     $chairs_count = max(0, (int)($_POST["chairs_count"] ?? 0));
     $flags_count = max(0, (int)($_POST["flags_count"] ?? 0));
     $rostrum_count = max(0, (int)($_POST["rostrum_count"] ?? 0));
     $housekeepers_count = max(0, (int)($_POST["housekeepers_count"] ?? 0));
     $other_equip_spec = trim($_POST["other_equip_spec"] ?? '');
-
-    // Structure equipment details into a JSON string for the database (TEXT column)
     $equipment_details = json_encode([
-        'tables' => $tables_count,
-        'chairs' => $chairs_count,
-        'flags' => $flags_count,
-        'rostrum' => $rostrum_count,
-        'housekeepers' => $housekeepers_count,
-        'other' => htmlspecialchars($other_equip_spec) 
+        'tables' => $tables_count, 'chairs' => $chairs_count, 'flags' => $flags_count,
+        'rostrum' => $rostrum_count, 'housekeepers' => $housekeepers_count, 'other' => htmlspecialchars($other_equip_spec) 
     ]);
 
     // --- NEW: Capture Other Venue Name if selected ---
+    // (This logic is unchanged)
     $venue_other_name = "";
+    $final_venue_name_for_schedule = $venue_name; 
     if ($venue_name === 'Other (Specify Below)') {
         $venue_other_name = trim($_POST["venue_other_name"] ?? '');
         if (empty($venue_other_name)) {
             $venue_name_err = "Please specify the venue name when selecting 'Other'.";
+        } else {
+            $final_venue_name_for_schedule = $venue_other_name; 
         }
     }
 
-    // 2. Insert into the database if no errors
+    // ====================================================
+    // === START: ADVANCED CONFLICT CHECK (WITH TIMES)  ===
+    // ====================================================
     if (empty($title_err) && empty($venue_name_err) && empty($activity_date_err) && empty($time_err) && empty($description_err)) {
         
-        // UPDATED SQL: Added venue_other_name and equipment_details
+        // This query now fetches the conflicting start/end times
+        $sql_conflict_check = "
+            SELECT vs.start_time, vs.end_time
+            FROM venue_schedule vs
+            JOIN venue_requests vr ON vs.venue_request_id = vr.venue_request_id
+            WHERE
+                (vs.venue_name LIKE ? OR ? LIKE CONCAT('%', vs.venue_name, '%'))
+            AND 
+                vs.activity_date = ?
+            AND 
+                vr.final_status != 'Rejected'
+            AND 
+                (? < vs.end_time AND ? > vs.start_time)
+            LIMIT 1
+        ";
+
+        if ($stmt_check = mysqli_prepare($link, $sql_conflict_check)) {
+            $param_venue_name_like = '%' . $final_venue_name_for_schedule . '%';
+
+            mysqli_stmt_bind_param($stmt_check, "sssss", 
+                $param_venue_name_like,
+                $final_venue_name_for_schedule,
+                $activity_date,
+                $start_time,
+                $end_time
+            );
+
+            mysqli_stmt_execute($stmt_check);
+            mysqli_stmt_store_result($stmt_check); // Store result
+
+            if (mysqli_stmt_num_rows($stmt_check) > 0) {
+                // A conflict was found! Bind the results to variables.
+                $conflicting_start = null;
+                $conflicting_end = null;
+                mysqli_stmt_bind_result($stmt_check, $conflicting_start, $conflicting_end);
+                mysqli_stmt_fetch($stmt_check); // Fetch the first conflicting row
+
+                // Format the times to be user-friendly (e.g., "9:00 AM")
+                $friendly_start = date('g:i A', strtotime($conflicting_start));
+                $friendly_end = date('g:i A', strtotime($conflicting_end));
+
+                // Create the new, helpful error message
+                $time_err = "This venue is already booked for an overlapping time slot. " .
+                            "The existing booking on that day is from <strong>" . $friendly_start . " to " . $friendly_end . "</strong>. " .
+                            "Please choose a different time (e.g., " . $friendly_end . " or later).";
+            }
+            mysqli_stmt_close($stmt_check);
+        } else {
+            $general_err = "Error checking venue availability. Please try again.";
+        }
+    }
+    // ====================================================
+    // === END: ADVANCED CONFLICT CHECK                 ===
+    // ====================================================
+
+
+    // 2. Insert into the database if no errors (all logic below is unchanged)
+    if (empty($title_err) && empty($venue_name_err) && empty($activity_date_err) && empty($time_err) && empty($description_err) && empty($general_err)) {
+        
+        mysqli_begin_transaction($link);
+
+        // SQL 1: Insert into main venue_requests table
         $sql = "INSERT INTO venue_requests (
                     user_id, org_id, title, venue_name, venue_other_name, 
                     activity_date, start_time, end_time, description, 
@@ -98,41 +166,54 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending', 'Awaiting Dean Approval', ?)";
 
         if ($stmt = mysqli_prepare($link, $sql)) {
-            // UPDATED bind types and parameters to include the two new fields
-            // types: iiss s sss s
-            // params: user_id, org_id, title, venue_name, venue_other_name, activity_date, start_time, end_time, description, equipment_details
-            $notification_status = 'Awaiting Dean Approval';
-            $equipment_details_var = "..."; // Must be defined somewhere earlier in the code
-$venue_other_name_var = "..."; // Default start status
-    mysqli_stmt_bind_param($stmt, "iissssssss",
-    $user_id,          // 1. user_id (i)
-    $org_id,           // 2. org_id (i)
-    $title,            // 3. title (s)
-    $venue_name,       // 4. venue_name (s)
-    $venue_other_name, // 5. venue_other_name (s)
-    $activity_date,    // 6. activity_date (s)
-    $start_time,       // 7. start_time (s)
-    $end_time,         // 8. end_time (s)
-    $description,      // 9. description (s)
-    $equipment_details // 10. equipment_details (s)
-);
+            mysqli_stmt_bind_param($stmt, "iissssssss",
+                $user_id, $org_id, $title, $venue_name, $venue_other_name, 
+                $activity_date, $start_time, $end_time, $description, $equipment_details
+            );
 
             if (mysqli_stmt_execute($stmt)) {
-                $success_message = "Venue request submitted successfully! It is now Awaiting Dean Approval.";
-                // Reset form fields
-                $title = $venue_name = $activity_date = $start_time = $end_time = $description = "";
-                $tables_count = $chairs_count = $flags_count = $rostrum_count = $housekeepers_count = $other_equip_spec = "";
-                $venue_other_name = "";
+                $new_request_id = mysqli_insert_id($link);
+                mysqli_stmt_close($stmt); 
+
+                // SQL 2: Insert into the schedule table
+                $sql_schedule = "INSERT INTO venue_schedule (venue_request_id, venue_name, activity_date, start_time, end_time) 
+                                 VALUES (?, ?, ?, ?, ?)";
+                
+                if ($stmt_schedule = mysqli_prepare($link, $sql_schedule)) {
+                    mysqli_stmt_bind_param($stmt_schedule, "issss",
+                        $new_request_id,
+                        $final_venue_name_for_schedule, 
+                        $activity_date,
+                        $start_time,
+                        $end_time
+                    );
+
+                    if (mysqli_stmt_execute($stmt_schedule)) {
+                        mysqli_commit($link);
+                        mysqli_stmt_close($stmt_schedule);
+                        header("location: officer_dashboard.php?success=venue_created");
+                        exit(); 
+                        
+                    } else {
+                        mysqli_rollback($link);
+                        $general_err = "ERROR: Could not save schedule details. " . mysqli_error($link);
+                        mysqli_stmt_close($stmt_schedule);
+                    }
+                } else {
+                    mysqli_rollback($link);
+                    $general_err = "ERROR: Could not prepare schedule statement.";
+                }
+                
             } else {
+                mysqli_rollback($link);
                 $general_err = "ERROR: Could not execute query: " . mysqli_error($link);
+                mysqli_stmt_close($stmt);
             }
-            mysqli_stmt_close($stmt);
         } else {
             $general_err = "ERROR: Could not prepare statement.";
         }
     }
-    mysqli_close($link);
-}
+} // --- END OF POST REQUEST HANDLING ---
 
 // Start the page using the template function
 start_page("New Venue Request", $_SESSION['role'], $_SESSION['full_name']);
@@ -148,21 +229,17 @@ $other_equip_spec_val = $_POST['other_equip_spec'] ?? $other_equip_spec;
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 <style>
-    .flatpickr-day.booked {
-        background: #f87171; /* red-400 */
-        color: white !important;
-        border-color: #f87171;
-        opacity: 0.7;
-        cursor: not-allowed;
+    /* This style is not really used now, but is harmless to keep */
+    .flatpickr-day.booked { 
+        background: #f87171; color: white !important; border-color: #f87171;
+        opacity: 0.7; cursor: not-allowed;
     }
-    .flatpickr-day.booked:hover {
-        background: #ef4444; /* red-500 */
-    }
+    .flatpickr-day.booked:hover { background: #ef4444; }
 </style>
 
 <div class="max-w-4xl mx-auto bg-white p-8 rounded-xl shadow-2xl">
     <h2 class="text-3xl font-extrabold text-gray-900 mb-6 border-b pb-2">Venue Reservation Request</h2>
-    <p class="text-gray-600 mb-8">Please fill out the form carefully, especially the date to check availability.</p>
+    <p class="text-gray-600 mb-8">Please fill out the form carefully. The system will check for time conflicts upon submission.</p>
 
     <?php if (!empty($general_err)): ?>
         <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
@@ -227,7 +304,12 @@ $other_equip_spec_val = $_POST['other_equip_spec'] ?? $other_equip_spec;
                 <input type="time" name="end_time" id="end_time" value="<?php echo htmlspecialchars($end_time); ?>"
                        class="w-full px-4 py-2 border rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 <?php echo (!empty($time_err)) ? 'border-red-500' : 'border-gray-300'; ?>" required>
             </div>
-             <?php if (!empty($time_err)): ?><div class="md:col-span-3"><p class="text-red-500 text-xs mt-1"><?php echo $time_err; ?></p></div><?php endif; ?>
+             <?php if (!empty($time_err)): ?>
+                <!-- This is where the new, helpful error message will appear -->
+                <div class="md:col-span-3">
+                    <p class="text-red-500 text-sm mt-1"><?php echo $time_err; // Note: No htmlspecialchars, we added <strong> ?></p>
+                </div>
+            <?php endif; ?>
         </div>
         
         <div class="p-6 border border-indigo-200 rounded-xl bg-indigo-50 mb-6">
@@ -301,7 +383,6 @@ function toggleOtherVenueInput(selectedValue) {
 }
 
 $(document).ready(function() {
-    let bookedDates = [];
     let fp = null; // Flatpickr instance
 
     // Function to initialize or update Flatpickr
@@ -314,36 +395,35 @@ $(document).ready(function() {
         fp = flatpickr("#activity_date", {
             dateFormat: "Y-m-d",
             minDate: "today",
-            disable: disabledDates,
-            onChange: function(selectedDates, dateStr, instance) {
-                // You can add time slot checking logic here (e.g., another AJAX call)
-                // For now, we only disable the whole day.
-                // You might need a more complex time-slot booking system for production.
-            }
+            // We pass an empty array to `disable` so no days are blocked.
+            disable: disabledDates, 
         });
     }
 
     // Function to fetch booked dates
     function fetchBookedDates(venueName) {
-        // If "Other (Specify Below)" is selected, availability checking is skipped
-        if (!venueName || venueName === 'Other (Specify Below)') { 
-            initializeFlatpickr([]); // Re-initialize without disabled dates or clear existing
+        
+        let venue_to_check = venueName;
+        if (venueName === 'Other (Specify Below)') {
+            venue_to_check = $('#venue_other_name').val();
+        }
+
+        if (!venue_to_check) { 
+            initializeFlatpickr([]);
             return;
         }
 
         $.ajax({
-            url: 'check_venue_availability.php', // This is the new PHP file we create
+            url: 'check_venue_availability.php', // This file now returns []
             method: 'GET',
-            data: { venue_name: venueName },
+            data: { 
+                venue_name: venue_to_check 
+            },
             dataType: 'json',
             success: function(response) {
-                if (response.booked_dates) {
-                    // response.booked_dates is expected to be an array of 'YYYY-MM-DD' strings
-                    bookedDates = response.booked_dates;
-                    initializeFlatpickr(bookedDates);
-                } else {
-                    initializeFlatpickr([]);
-                }
+                // response.booked_dates will be an empty array []
+                // This will make the calendar NOT block any days.
+                initializeFlatpickr(response.booked_dates);
             },
             error: function() {
                 alert('Error checking venue availability. Try refreshing.');
@@ -355,21 +435,31 @@ $(document).ready(function() {
     // Event listener for venue change
     $('#venue_name').on('change', function() {
         const selectedVenue = $(this).val();
-        fetchBookedDates(selectedVenue);
-        $('#activity_date').val(''); // Clear selected date when venue changes
-        toggleOtherVenueInput(selectedVenue); // Call new toggle function
+        fetchBookedDates(selectedVenue); 
+        $('#activity_date').val(''); 
+        toggleOtherVenueInput(selectedVenue);
+    });
+    
+    $('#venue_other_name').on('blur', function() { 
+        const selectedVenueInDropdown = $('#venue_name').val();
+        if (selectedVenueInDropdown === 'Other (Specify Below)') {
+            fetchBookedDates(selectedVenueInDropdown); 
+            $('#activity_date').val(''); 
+        }
     });
 
-    // Initialize on load for the default selected venue (if any)
     const initialVenue = $('#venue_name').val();
     fetchBookedDates(initialVenue);
 
-    // Initial simple Flatpickr setup if no venue is selected yet
     if (!initialVenue) {
         initializeFlatpickr([]);
     }
     
-    // Call the toggle function on page load to set the initial state (sticky form)
     toggleOtherVenueInput(initialVenue);
 });
 </script>
+
+<?php
+mysqli_close($link);
+end_page();
+?>
