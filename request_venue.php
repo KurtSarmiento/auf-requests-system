@@ -256,7 +256,7 @@ $other_equip_spec_val = $_POST['other_equip_spec'] ?? $other_equip_spec;
                 <?php equipment_input('rostrum', 'Rostrum', $rostrum_val); ?>
                 <?php equipment_input('housekeepers', 'Housekeepers', $housekeepers_val); ?>
                 <div class='flex items-center space-x-2'> 
-                    <p class='text-sm font-bold text-gray-700'>Other: See below</p>
+                    <p class='text-sm font-bold text-gray-700'></p>
                 </div>
             </div>
 
