@@ -97,26 +97,43 @@ $org_filter_clause = '';
 $safe_search = "%" . $search_term . "%";
 
 // Base WHERE clause for Approved/Rejected status in the current admin's column
-// ✅ AFO LOGIC: Modified the filter to check for 'Budget Available' or 'Rejected'
-$params_filter = []; // Use a dedicated param array for the filter
+// ✅ Use a dedicated param array for the filter
+$params_filter = [];
+// ✅ NEW: Need to track types for the filter
+$types_filter = ''; 
+
+// ===================================
+// === START OF BUG FIX 1 (AFO FILTER) ===
+// ===================================
 if ($role === 'AFO') {
-    // History includes 'Budget Available' OR 'Rejected' (based on afo_status)
-    // We filter based on the 'my_decision' alias which will be set correctly in the SQL
-    $filter_clause = " (t.my_decision = 'Budget Available' OR t.my_decision = 'Rejected') ";
-    if ($filter_status !== 'All') {
-         // Map 'Approved' in filter dropdown to 'Budget Available'
-        $status_to_check = ($filter_status === 'Approved') ? 'Budget Available' : $filter_status;
+    // History = 'Budget Available' (funding), 'Rejected' (either), or 'Approved' (venue)
+    if ($filter_status === 'All') {
+        $filter_clause = " (t.my_decision = 'Budget Available' OR t.my_decision = 'Rejected' OR t.my_decision = 'Approved') ";
+    } 
+    // 'Approved' for AFO means BOTH funding and venue approvals
+    elseif ($filter_status === 'Approved') {
+        $filter_clause = " (t.my_decision = 'Budget Available' OR t.my_decision = 'Approved') ";
+        // No parameters needed for this specific case
+    } 
+    // Filter is 'Rejected'
+    else {
         $filter_clause = " t.my_decision = ? ";
-        $params_filter[] = &$status_to_check;
+        $params_filter[] = &$filter_status; // Use reference as user did
+        $types_filter .= 's';
     }
 } else {
     // Standard logic for other roles
-    $filter_clause = " (t.my_decision = 'Approved' OR t.my_decision = 'Rejected') ";
-    if ($filter_status !== 'All') {
+    if ($filter_status === 'All') {
+        $filter_clause = " (t.my_decision = 'Approved' OR t.my_decision = 'Rejected') ";
+    } else {
         $filter_clause = " t.my_decision = ? ";
-        $params_filter[] = &$filter_status;
+        $params_filter[] = &$filter_status; // Use reference as user did
+        $types_filter .= 's';
     }
 }
+// ===================================
+// === END OF BUG FIX 1 ===
+// ===================================
 
 
 // Add search clause: searches on request title
@@ -206,7 +223,8 @@ if (in_array($role, $funding_history_roles)) {
             r.amount, 
             {$status_column_to_select} AS my_decision, 
             {$date_column_to_select} AS decision_date,
-            'Funding' AS request_type_label 
+            'Funding' AS request_type_label,
+            r.date_submitted
         FROM requests r
         JOIN users u ON r.user_id = u.user_id
         JOIN organizations o ON u.org_id = o.org_id
@@ -234,7 +252,8 @@ if (in_array($role, $venue_history_roles)) {
             NULL AS amount, 
             vr.$status_column AS my_decision, 
             vr.$date_column AS decision_date,
-            'Venue' AS request_type_label
+            'Venue' AS request_type_label,
+            vr.date_submitted
         FROM venue_requests vr
         JOIN users u ON vr.user_id = u.user_id
         JOIN organizations o ON u.org_id = o.org_id
@@ -249,7 +268,7 @@ $sql_union = implode("\n UNION ALL \n", $sql_parts);
 
 if (empty($sql_union)) {
     // Fallback if no relevant history exists for the role
-    $sql_union = "SELECT 1 AS request_id, 'No History' AS title, 1 AS user_id, 'N/A' AS officer_name, 'N/A' AS org_name, 'N/A' AS type, NULL AS amount, 'N/A' AS my_decision, NOW() AS decision_date, 'N/A' AS request_type_label LIMIT 0";
+    $sql_union = "SELECT 1 AS request_id, 'No History' AS title, 1 AS user_id, 'N/A' AS officer_name, 'N/A' AS org_name, 'N/A' AS type, NULL AS amount, 'N/A' AS my_decision, NOW() AS decision_date, 'N/A' AS request_type_label, NOW() as date_submitted LIMIT 0";
 }
 
 
@@ -277,14 +296,19 @@ $sql_count = "
 $all_params = [];
 $all_types = '';
 
-// 1. Filter Status Parameter (if not 'All')
-if ($filter_status !== 'All') {
-    // ✅ Use the dedicated param array set earlier
+// ===================================
+// === START OF BUG FIX 2 (PARAM BINDING) ===
+// ===================================
+// 1. Filter Status Parameter (if it exists)
+if (!empty($params_filter)) {
     foreach ($params_filter as $key => $value) {
         $all_params[] = &$params_filter[$key];
     }
-    $all_types .= 's';
+    $all_types .= $types_filter; // Use the types string we saved
 }
+// ===================================
+// === END OF BUG FIX 2 ===
+// ===================================
 
 // 2. Search Term Parameter
 if (!empty($search_term)) {
@@ -326,7 +350,7 @@ $total_pages = ceil($total_records / $records_per_page);
 $requests = [];
 // Append LIMIT and OFFSET parameters
 $limit_param = $records_per_page; // Create non-reference variable
-$offset_param = $offset;           // Create non-reference variable
+$offset_param = $offset;         // Create non-reference variable
 $all_params[] = &$limit_param;
 $all_params[] = &$offset_param;
 $all_types .= 'ii';
@@ -382,7 +406,7 @@ start_page("Completed Reviews History", $role, $full_name);
             <select id="status" name="status" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border bg-white">
                 <option value="All" <?php if ($filter_status === 'All') echo 'selected'; ?>>All Decisions</option>
                 <option value="Approved" <?php if ($filter_status === 'Approved') echo 'selected'; ?>>
-                    <?php echo ($role === 'AFO') ? 'Budget Available' : 'Approved'; // ✅ AFO LOGIC: Change label ?>
+                    <?php echo ($role === 'AFO') ? 'Budget Available/Approved' : 'Approved'; // ✅ AFO LOGIC: Change label ?>
                 </option>
                 <option value="Rejected" <?php if ($filter_status === 'Rejected') echo 'selected'; ?>>Rejected</option>
             </select>
@@ -404,7 +428,7 @@ start_page("Completed Reviews History", $role, $full_name);
 <!-- Results Table -->
 <div class="bg-white p-6 rounded-xl shadow-xl overflow-x-auto">
     <div class="mb-4 text-sm text-gray-600">
-        Showing <?php echo min($records_per_page, max(0, $total_records - $offset)); ?> of <?php echo $total_records; ?> records.
+        Showing <?php echo min($records_per_page, max(0, $total_records - ($page - 1) * $records_per_page)); ?> of <?php echo $total_records; ?> records.
     </div>
 
     <?php if (empty($requests)): ?>
@@ -506,10 +530,10 @@ start_page("Completed Reviews History", $role, $full_name);
             </a>
         <?php else: ?>
              <span class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-gray-100 text-sm font-medium text-gray-400 cursor-not-allowed">
-                 <span class="sr-only">Previous</span>
-                 <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                     <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd" />
-                 </svg>
+                <span class="sr-only">Previous</span>
+                <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                    <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd" />
+                </svg>
              </span>
         <?php endif; ?>
 
@@ -528,10 +552,10 @@ start_page("Completed Reviews History", $role, $full_name);
             </a>
         <?php else: ?>
              <span class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-gray-100 text-sm font-medium text-gray-400 cursor-not-allowed">
-                 <span class="sr-only">Next</span>
-                 <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                     <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
-                 </svg>
+                <span class="sr-only">Next</span>
+                <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                    <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+                </svg>
              </span>
         <?php endif; ?>
     </nav>
