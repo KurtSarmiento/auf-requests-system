@@ -201,9 +201,9 @@ if (in_array($role, $funding_history_roles)) {
     if ($role === 'AFO') {
         // History = Rejected (afo_status) OR Budget Available (final_status)
         // Note: Budget Processing items are NOT history yet.
-        $funding_where_clause = "WHERE (r.afo_status = 'Rejected' OR r.final_status = 'Budget Available')";
+        $funding_where_clause = "WHERE (r.afo_status = 'Rejected' OR r.final_status = 'Budget Available' OR (r.final_status = 'Approved' AND r.type = 'Liquidation Report'))";
         // Use 'final_status' if available, otherwise 'afo_status'
-        $status_column_to_select = "IF(r.final_status = 'Budget Available', r.final_status, r.afo_status)"; 
+        $status_column_to_select = "IF(r.final_status IN ('Budget Available', 'Approved'), r.final_status, r.afo_status)"; 
         // Use 'date_budget_available' for approved, 'afo_decision_date' for rejected
         // NOTE: Make sure `date_budget_available` column exists and is DATETIME, NULLable
         $date_column_to_select = "IF(r.final_status = 'Budget Available', r.date_budget_available, r.afo_decision_date)";
@@ -212,6 +212,7 @@ if (in_array($role, $funding_history_roles)) {
         $funding_where_clause = "WHERE r.$status_column IN ('Approved', 'Rejected')";
     }
     
+    // ✅ This SQL is correct, it selects r.type which we need for the fix
     $sql_funding = "
         SELECT 
             r.request_id, 
@@ -451,8 +452,22 @@ start_page("Completed Reviews History", $role, $full_name);
             </thead>
             <tbody class="bg-white divide-y divide-gray-100">
                 <?php foreach ($requests as $request): 
-                    // ✅ AFO LOGIC: Use the get_status_class helper
-                    $decision_color = get_status_class($request['my_decision']);
+                
+                    // ✅ *** START: AFO LIQUIDATION FIX ***
+                    // We check if the role is AFO and the type is 'Liquidation Report'
+                    // to change the display text from 'Budget Available' to 'Approved'.
+                    $display_decision = $request['my_decision'];
+                    
+                    if ($role === 'AFO' && 
+                        $request['my_decision'] === 'Budget Available' && 
+                        isset($request['type']) && $request['type'] === 'Liquidation Report') {
+                        
+                        $display_decision = 'Approved';
+                    }
+                    // ✅ *** END: AFO LIQUIDATION FIX ***
+                    
+                    // Use the new $display_decision variable for the color
+                    $decision_color = get_status_class($display_decision);
                     
                     $amount_display = is_numeric($request['amount']) ? '₱' . number_format($request['amount'], 2) : 'N/A';
                     
@@ -492,7 +507,7 @@ start_page("Completed Reviews History", $role, $full_name);
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-center">
                         <span class="inline-flex items-center px-3 py-0.5 rounded-full text-xs font-medium border-2 <?php echo $decision_color; ?>">
-                            <?php echo htmlspecialchars($request['my_decision']); ?>
+                            <?php echo htmlspecialchars($display_decision); // ✅ Use the new variable ?>
                         </span>
                     </td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">

@@ -301,7 +301,7 @@ start_page("Admin Dashboard", $role, $full_name);
             <?php 
             // ✅ AFO LOGIC: Update description for the 'Approved' count box
             if ($role === 'AFO') {
-                echo 'Total requests with budget available'; 
+                echo 'Total requests with budget available and approved by you'; 
             } else {
                 echo 'Total requests approved in your stage';
             }

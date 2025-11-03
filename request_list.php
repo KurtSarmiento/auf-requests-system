@@ -42,7 +42,7 @@ $sql_funding = "
         r.final_status, 
         r.notification_status,
         o.org_name,
-        'funding' AS type
+        r.type -- ✅ *** FIX 1: Changed 'funding' AS type to r.type ***
     FROM requests r
     INNER JOIN users u ON r.user_id = u.user_id
     INNER JOIN organizations o ON u.org_id = o.org_id
@@ -60,8 +60,8 @@ if ($stmt = mysqli_prepare($link, $sql_funding)) {
         }
     } else {
         echo "<div class='bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg mb-6 shadow-md'>
-                ERROR: Could not execute Funding query. " . mysqli_error($link) . "
-              </div>";
+                    ERROR: Could not execute Funding query. " . mysqli_error($link) . "
+                  </div>";
     }
     mysqli_stmt_close($stmt);
 }
@@ -102,8 +102,8 @@ if ($stmt = mysqli_prepare($link, $sql_venue)) {
         }
     } else {
         echo "<div class='bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg mb-6 shadow-md'>
-                ERROR: Could not execute Venue query. " . mysqli_error($link) . "
-              </div>";
+                    ERROR: Could not execute Venue query. " . mysqli_error($link) . "
+                  </div>";
     }
     mysqli_stmt_close($stmt);
 }
@@ -116,6 +116,14 @@ usort($requests, fn($a, $b) => strtotime($b['date_submitted']) - strtotime($a['d
 function get_final_status($request) {
     // ✅ Trust DB's final_status first
     if (!empty($request['final_status']) && $request['final_status'] !== 'Pending') {
+
+        // ✅ *** FIX 2: LIQUIDATION STATUS FIX ***
+        // If the type is 'Liquidation Report' and status is 'Budget Available',
+        // just show 'Approved'.
+        if (isset($request['type']) && $request['type'] === 'Liquidation Report' && $request['final_status'] === 'Budget Available') {
+            return 'Approved';
+        }
+        
         return $request['final_status'];
     }
 
@@ -191,6 +199,8 @@ function get_final_status($request) {
                 <tbody class="bg-white divide-y divide-gray-200">
                     <?php foreach ($requests as $request): 
                         $final_status = get_final_status($request);
+                        
+                        // ✅ This logic now works, because $final_status will be 'Approved' for Liquidations
                         $status_class = match ($final_status) {
                             'Approved' => 'bg-green-100 text-green-800 font-semibold',
                             'Budget Available' => 'bg-green-100 text-green-800 font-semibold',
@@ -200,9 +210,19 @@ function get_final_status($request) {
 
                         $is_venue = ($request['type'] ?? 'funding') === 'venue';
                         $detail_page = $is_venue ? 'venue_request_details.php' : 'request_details.php'; 
-                        $request_type_label = $is_venue 
-                            ? '<span class="text-purple-600 font-bold">VENUE</span>' 
-                            : '<span class="text-blue-600 font-bold">FUNDING</span>';
+                        
+                        // This logic determines the display label based on the 'type' column
+                        $request_type_label = '';
+                        if ($is_venue) {
+                            $request_type_label = '<span class="text-purple-600 font-bold">VENUE</span>';
+                        } elseif ($request['type'] === 'Liquidation Report') {
+                            $request_type_label = '<span class="text-green-600 font-bold">LIQUIDATION</span>';
+                        } elseif ($request['type'] === 'Reimbursement') {
+                            $request_type_label = '<span class="text-orange-600 font-bold">REIMBURSEMENT</span>';
+                        } else {
+                            // Default for 'Budget Request' or any other funding type
+                            $request_type_label = '<span class="text-blue-600 font-bold">FUNDING</span>';
+                        }
                     ?>
                     <tr class="hover:bg-gray-50">
                         <td class="px-6 py-4 text-sm font-medium text-gray-900">

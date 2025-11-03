@@ -90,6 +90,19 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
     require_once 'email.php';
     // === END: NEW EMAIL LOGIC (Include) ===
 
+    // ✅ *** FIX 1: Fetch request type for POST logic ***
+    // We must fetch this *before* the UPDATE to know how to handle the logic.
+    $request_type_for_post = '';
+    if ($request_id > 0) {
+        $type_stmt = mysqli_prepare($link, "SELECT type FROM requests WHERE request_id = ?");
+        mysqli_stmt_bind_param($type_stmt, "i", $request_id);
+        if (mysqli_stmt_execute($type_stmt)) {
+            mysqli_stmt_bind_result($type_stmt, $request_type_for_post);
+            mysqli_stmt_fetch($type_stmt);
+        }
+        mysqli_stmt_close($type_stmt);
+    }
+
     $decision = $_POST['decision'];
     $remark_text = trim($_POST['remark'] ?? ''); // remark might not exist on 'Available'
 
@@ -153,7 +166,14 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
                 case 'Adviser': $next_notification_status = 'Awaiting Dean Review'; break;
                 case 'Dean':    $next_notification_status = 'Awaiting OSAFA Review'; break;
                 case 'OSAFA': $next_notification_status = 'Awaiting AFO Review'; break;
-                case 'AFO':   $next_notification_status = 'Budget Processing'; break;
+                case 'AFO': 
+                    // ✅ *** FIX 1: AFO Approval POST Logic ***
+                    if ($request_type_for_post === 'Liquidation Report') {
+                        $next_notification_status = 'Request Approved';
+                    } else {
+                        $next_notification_status = 'Budget Processing';
+                    }
+                    break;
             }
         } else {
             // 'Rejected'
@@ -163,8 +183,14 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
         $final_status_sql = "";
         if ($decision === 'Rejected') {
             $final_status_sql = ", final_status = 'Rejected'";
+        
+        // ✅ *** FIX 1: AFO Approval POST Logic ***
         } elseif ($current_role === 'AFO' && $decision === 'Approved') {
-            $final_status_sql = ", final_status = 'Budget Processing'"; // Not final yet
+            if ($request_type_for_post === 'Liquidation Report') {
+                $final_status_sql = ", final_status = 'Approved'";
+            } else {
+                $final_status_sql = ", final_status = 'Budget Processing'";
+            }
         }
 
         $sql = "UPDATE requests 
@@ -206,8 +232,37 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
                         $body = buildEmailTemplate($greeting, $message, $details, "Reason for Rejection", $remark_text);
                         sendNotificationEmail($recipientEmail, $subject, $body);
                     }
-                }
                 // === END: UPGRADED EMAIL LOGIC (Rejection) ===
+
+                // ✅ *** FIX 1: AFO Approval Email Logic ***
+                } elseif ($decision === 'Approved' && $current_role === 'AFO') {
+                    
+                    $officerDetails = getOfficerDetails($link, $request_id, 'funding'); // Assuming this works
+                    if ($officerDetails) {
+                        $greeting = "Dear " . $officerDetails['full_name'] . ",";
+                        $details = [
+                            "Request Title" => $officerDetails['activity_name'],
+                            "Request Type" => $officerDetails['type'] // This will now show 'Liquidation Report' correctly
+                        ];
+
+                        if ($request_type_for_post === 'Liquidation Report') {
+                            // --- Email for Liquidation ---
+                            $subject = "Your Liquidation Report is Approved (ID: $request_id)";
+                            $message = "Your Liquidation Report (" . $officerDetails['activity_name'] . ") has been <strong>approved by AFO</strong>. The request is now considered complete.";
+                            $details["Final Status"] = "Approved";
+                        
+                        } else {
+                            // --- Email for Budget Request / Reimbursement ---
+                            $subject = "Your Funding Request is Approved and is Processing (ID: $request_id)";
+                            $message = "Your funding request (" . $officerDetails['activity_name'] . ") has been <strong>approved by AFO</strong>. The budget is now being processed.";
+                            $details["Next Step"] = "Budget Release";
+                        }
+                        
+                        $body = buildEmailTemplate($greeting, $message, $details);
+                        sendNotificationEmail($officerDetails['email'], $subject, $body);
+                    }
+                }
+                // ✅ *** END: AFO Approval Email Logic ***
 
             } else {
                 $error_message = "Error: Could not execute the update. " . mysqli_error($link);
@@ -229,6 +284,7 @@ if ($request_id > 0) {
         $success_message = "Your decision has been recorded successfully.";
     }
 
+    // ✅ This SQL fetches `r.*` which includes the `type` column needed for HTML logic
     $sql = "SELECT 
                 r.*, 
                 u.full_name, 
@@ -370,6 +426,7 @@ start_page("Review Funding Request", $current_role, $_SESSION["full_name"]);
                 <div class="mt-4 pt-4 border-t border-gray-200">
                     <h4 class="text-md font-semibold text-gray-800 mb-2">Final Budget Status</h4>
                     <?php
+                        // ✅ *** FIX 3: Logic to show 'Approved' for Liquidation in Final Status box ***
                         $final_status_display = $request['notification_status'];
                         $final_status_class = get_status_class($request['final_status']);
 
@@ -379,6 +436,10 @@ start_page("Review Funding Request", $current_role, $_SESSION["full_name"]);
                         } elseif ($request['final_status'] === 'Budget Processing') {
                             $final_status_display = 'Budget Processing';
                             $final_status_class = get_status_class('Budget Processing');
+                        } elseif ($request['final_status'] === 'Approved' && $request['type'] === 'Liquidation Report') {
+                            // This is the new case
+                            $final_status_display = 'Approved';
+                            $final_status_class = get_status_class('Approved');
                         }
                     ?>
                     <span class="status-pill text-sm <?php echo $final_status_class; ?>">
@@ -445,7 +506,12 @@ start_page("Review Funding Request", $current_role, $_SESSION["full_name"]);
                 $final_status = $request['final_status'];
                 $is_ready_for_review = (!$previous_role_column || $request[$previous_role_column] === 'Approved');
                 
-                if ($current_role === 'AFO' && $my_status === 'Approved' && $final_status === 'Budget Processing') {
+                // ✅ *** FIX 2: Hide "Mark as Available" Button ***
+                if ($current_role === 'AFO' && 
+                    $my_status === 'Approved' && 
+                    $final_status === 'Budget Processing' && 
+                    $request['type'] !== 'Liquidation Report'
+                ) {
                 ?>
                     <h2 class="text-2xl font-bold text-gray-900 mb-4">Budget Status</h2>
                     <div class="bg-blue-50 border-l-4 border-blue-500 text-blue-700 p-4 mb-4" role="alert">
@@ -459,30 +525,34 @@ start_page("Review Funding Request", $current_role, $_SESSION["full_name"]);
                         </button>
                     </form>
 
-                <?php
-                } elseif ($final_status === 'Budget Available' || $final_status === 'Rejected') {
+                <?php } elseif ($final_status === 'Budget Available' || $final_status === 'Rejected' || ($final_status === 'Approved' && $request['type'] === 'Liquidation Report')) {
                     $is_decided = ($my_status === 'Approved' || $my_status === 'Rejected');
                 ?>
                     <h2 class="text-2xl font-bold text-gray-900 mb-4">Request Completed</h2>
                     
-                    <?php if ($final_status === 'Budget Available'): ?>
+                    <?php if ($final_status === 'Budget Available') { ?>
                         <div class="bg-green-100 border-l-4 border-green-500 text-green-700 p-4" role="alert">
                             <p class="font-bold">Budget Available</p>
                             <p>This request has been fully approved and the budget is available.</p>
                         </div>
-                    <?php else: // Rejected ?>
+                    <?php } elseif ($final_status === 'Approved' && $request['type'] === 'Liquidation Report') { ?>
+                        <div class="bg-green-100 border-l-4 border-green-500 text-green-700 p-4" role="alert">
+                            <p class="font-bold">Liquidation Approved</p>
+                            <p>This liquidation report has been fully approved and the request is complete.</p>
+                        </div>
+                    <?php } else { // Rejected ?>
                         <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4" role="alert">
                             <p class="font-bold">Request Rejected</p>
                             <p>This request was rejected. No further action is needed.</p>
                         </div>
-                    <?php endif; ?>
+                    <?php } ?>
                     
-                    <?php if ($is_decided && $current_role !== 'AFO'): ?>
+                    <?php if ($is_decided && $current_role !== 'AFO') { ?>
                     <div class="bg-blue-50 border-l-4 border-blue-500 text-blue-700 p-4 mt-4" role="alert">
                          <p class="font-bold">Your Decision</p>
                          <p>You recorded a decision of (<?php echo htmlspecialchars($my_status); ?>) for this request.</p>
                     </div>
-                    <?php endif; ?>
+                    <?php } ?>
 
                 <?php
                 } elseif (!$is_ready_for_review) {

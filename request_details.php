@@ -50,6 +50,7 @@ if (!function_exists('get_status_class')) {
 if ($request_id > 0) {
 
     // --- UPDATED SQL: Select all _decision_date columns + date_budget_available ---
+    // ✅ NOTE: This SQL query already selects r.*, which includes the 'type' column
     $sql = "SELECT
                 r.*,
                 u.full_name,
@@ -151,19 +152,18 @@ function info_box($title, $value, $extra_class = '') {
             <p class="font-bold text-xl">Access Denied</p>
             <p><?php echo htmlspecialchars($error_message); ?></p>
              <div class="mt-4">
-               <?php // Determine correct back link
-                  $back_link = $is_officer ? 'request_list.php' : 'admin_dashboard.php';
-                  $back_text = $is_officer ? '← Back to My Requests' : '← Back to Dashboard';
-               ?>
-               <a href="<?php echo $back_link; ?>" class="inline-block bg-red-600 text-white px-4 py-2 rounded-lg mt-4 hover:bg-red-700"><?php echo $back_text; ?></a>
-            </div>
+                <?php // Determine correct back link
+                     $back_link = $is_officer ? 'request_list.php' : 'admin_dashboard.php';
+                     $back_text = $is_officer ? '← Back to My Requests' : '← Back to Dashboard';
+                ?>
+                <a href="<?php echo $back_link; ?>" class="inline-block bg-red-600 text-white px-4 py-2 rounded-lg mt-4 hover:bg-red-700"><?php echo $back_text; ?></a>
+             </div>
         </div>
     <?php elseif ($request): ?>
-         <!-- Back Button -->
-        <div class="mb-6">
+         <div class="mb-6">
              <?php // Determine correct back link based on who is viewing
-                $back_link = $is_officer ? 'request_list.php' : 'admin_history_list.php'; // Admins go to history usually
-                $back_text = $is_officer ? '← Back to My Requests' : '← Back to History';
+                 $back_link = $is_officer ? 'request_list.php' : 'admin_history_list.php'; // Admins go to history usually
+                 $back_text = $is_officer ? '← Back to My Requests' : '← Back to History';
              ?>
             <a href="<?php echo $back_link; ?>" class="text-gray-600 hover:text-gray-900 font-medium">
                <?php echo $back_text; ?>
@@ -191,11 +191,9 @@ function info_box($title, $value, $extra_class = '') {
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
             <div class="lg:col-span-1 space-y-6">
-                <!-- Request Progress/Timeline -->
                 <div class="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
                     <h3 class="text-xl font-semibold text-gray-800 mb-4">Request Progress</h3>
-                    <ol class="relative border-l border-gray-200"> <!-- Removed dark mode class, added ml-3 back if needed -->
-                        <?php
+                    <ol class="relative border-l border-gray-200"> <?php
                         // ===================================
                         // --- APPROVAL CHAIN LOGIC ---
                         // ===================================
@@ -227,11 +225,9 @@ function info_box($title, $value, $extra_class = '') {
 
                             ?>
                             <li class="mb-6 ml-6">
-                                <!-- ✅ REVERTED ICON SPAN to original style -->
                                 <span class="absolute flex items-center justify-center w-6 h-6 bg-blue-100 rounded-full -left-3 ring-8 ring-white">
                                     <svg class="w-4 h-4 text-blue-800" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
                                 </span>
-                                <!-- End Reverted Icon Span -->
                                 <h4 class="flex items-center mb-1 text-md font-semibold text-gray-900">
                                     <?php echo htmlspecialchars($role_name); ?>
                                 </h4>
@@ -249,35 +245,37 @@ function info_box($title, $value, $extra_class = '') {
                         <?php
                         // --- ✅ BUDGET STATUS STEP (with original icon style) ---
                          $afo_status = $request['afo_status'] ?? 'Pending';
-                        if ($afo_status === 'Approved' || $request['final_status'] === 'Budget Available' || $request['final_status'] === 'Budget Processing') {
-                             $budget_status = $request['final_status'];
-                             $budget_date = $request['date_budget_available'] ?? null;
-                             $budget_status_text = '';
+                         
+                         // ✅ *** FIX: Added check for request type ***
+                         // Only show this block if it's NOT a Liquidation Report
+                         if (
+                            isset($request['type']) && $request['type'] !== 'Liquidation Report' &&
+                            ($afo_status === 'Approved' || $request['final_status'] === 'Budget Available' || $request['final_status'] === 'Budget Processing')
+                         ) {
+                               $budget_status = $request['final_status'];
+                               $budget_date = $request['date_budget_available'] ?? null;
+                               $budget_status_text = '';
 
-                             if ($budget_status === 'Budget Available') {
-                                 $budget_status_text = 'Available';
-                                 $budget_status_class = get_status_class('Budget Available');
-                             } elseif ($budget_status === 'Budget Processing') {
-                                 $budget_status_text = 'Processing';
-                                 $budget_status_class = get_status_class('Budget Processing');
-                             } else {
-                                 $budget_status_text = 'Pending';
-                                 $budget_status_class = get_status_class('Pending');
-                             }
+                               if ($budget_status === 'Budget Available') {
+                                    $budget_status_text = 'Available';
+                                    $budget_status_class = get_status_class('Budget Available');
+                               } elseif ($budget_status === 'Budget Processing') {
+                                    $budget_status_text = 'Processing';
+                                    $budget_status_class = get_status_class('Budget Processing');
+                               } else {
+                                    $budget_status_text = 'Pending';
+                                    $budget_status_class = get_status_class('Pending');
+                               }
 
-                             // Override if rejected after AFO approval
-                             if ($request['final_status'] === 'Rejected' && $afo_status === 'Approved') {
-                                 $budget_status_text = 'N/A (Rejected)';
-                                 $budget_status_class = get_status_class('Rejected');
-                                 $budget_date = null; // No date if rejected
-                             }
+                               // Override if rejected after AFO approval
+                               if ($request['final_status'] === 'Rejected' && $afo_status === 'Approved') {
+                                    $budget_status_text = 'N/A (Rejected)';
+                                    $budget_status_class = get_status_class('Rejected');
+                                    $budget_date = null; // No date if rejected
+                               }
                         ?>
-                            <li class="ml-6"> <!-- Removed mb-6 -->
-                                <!-- ✅ REVERTED ICON SPAN to original style -->
-                                <span class="absolute flex items-center justify-center w-6 h-6 bg-purple-100 rounded-full -left-3 ring-8 ring-white"> <!-- Example color, adjust if needed -->
-                                    <svg class="w-4 h-4 text-purple-800" fill="currentColor" viewBox="0 0 20 20"><path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v10a2 2 0 01-2 2H7a2 2 0 01-2-2V4zm3 1a1 1 0 000 2h.01a1 1 0 100-2H8zm-1 4a1 1 0 100 2h6a1 1 0 100-2H7z"></path></svg>
+                            <li class="ml-6"> <span class="absolute flex items-center justify-center w-6 h-6 bg-purple-100 rounded-full -left-3 ring-8 ring-white"> <svg class="w-4 h-4 text-purple-800" fill="currentColor" viewBox="0 0 20 20"><path d="M5 4a2 2 0 012-2h6a2 2 0 012 2v10a2 2 0 01-2 2H7a2 2 0 01-2-2V4zm3 1a1 1 0 000 2h.01a1 1 0 100-2H8zm-1 4a1 1 0 100 2h6a1 1 0 100-2H7z"></path></svg>
                                 </span>
-                                <!-- End Reverted Icon Span -->
                                 <h4 class="mb-1 text-md font-semibold text-gray-900">Budget Release</h4>
                                 <span class="status-pill text-xs <?php echo $budget_status_class; ?>">
                                     <?php echo htmlspecialchars($budget_status_text); ?>
@@ -301,11 +299,8 @@ function info_box($title, $value, $extra_class = '') {
                             $final_status_class = get_status_class('Rejected');
                         ?>
                             <li class="ml-6">
-                                <!-- ✅ REVERTED ICON SPAN to original style -->
-                                <span class="absolute flex items-center justify-center w-6 h-6 bg-red-100 rounded-full -left-3 ring-8 ring-white"> <!-- Example color -->
-                                    <svg class="w-4 h-4 text-red-800" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path></svg>
+                                <span class="absolute flex items-center justify-center w-6 h-6 bg-red-100 rounded-full -left-3 ring-8 ring-white"> <svg class="w-4 h-4 text-red-800" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path></svg>
                                 </span>
-                                <!-- End Reverted Icon Span -->
                                 <h4 class="mb-1 text-md font-semibold text-gray-900">Final Status</h4>
                                 <span class="status-pill text-xs <?php echo $final_status_class; ?>">
                                     Rejected
@@ -315,8 +310,7 @@ function info_box($title, $value, $extra_class = '') {
                                 </p>
                             </li>
                         <?php } ?>
-                        <!-- --- END BUDGET STATUS STEP --- -->
-                    </ol>
+                        </ol>
                 </div>
 
                 <div class="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
@@ -391,4 +385,3 @@ function info_box($title, $value, $extra_class = '') {
 <?php
 end_page();
 ?>
-
