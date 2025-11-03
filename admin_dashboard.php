@@ -204,7 +204,8 @@ if (!empty($status_column) && empty($error_message)) {
         // ✅ AFO LOGIC: Modify approved condition for AFO
         $funding_approved_condition = $sql_approved;
         if($role === 'AFO') {
-            $funding_approved_condition = "(final_status = 'Budget Available')"; // Only count fully available
+            // ✅ *** FIX 1: Count Budget Available (for Budget/Reimburse) AND Approved (for Liquidation) ***
+            $funding_approved_condition = "(final_status = 'Budget Available' OR (final_status = 'Approved' AND r.type = 'Liquidation Report'))";
         }
         
         $sql_funding_counts = "SELECT 
@@ -301,7 +302,8 @@ start_page("Admin Dashboard", $role, $full_name);
             <?php 
             // ✅ AFO LOGIC: Update description for the 'Approved' count box
             if ($role === 'AFO') {
-                echo 'Total requests with budget available and approved by you'; 
+                // ✅ *** FIX 2: Update helper text to be more accurate ***
+                echo 'Total requests approved or made available by you'; 
             } else {
                 echo 'Total requests approved in your stage';
             }
@@ -321,4 +323,3 @@ start_page("Admin Dashboard", $role, $full_name);
 // End the page using the template function
 end_page();
 ?>
-
