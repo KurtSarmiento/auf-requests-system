@@ -8,20 +8,9 @@ function start_page($title, $role, $full_name) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo htmlspecialchars($title); ?> | AUF System</title>
+    <link rel="stylesheet" href="css/styles.css"> 
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        /* Off-white background as requested */
-        body { 
-            font-family: 'Inter', sans-serif; 
-            background-color: #f8f9fa; /* Off-white / light gray */
-        }
-        /* Custom blue shades for consistency */
-        .header-bg { background-color: #1e3a8a; } /* Dark Blue for Header */
-        .text-primary { color: #2563eb; } /* Indigo/Blue for primary actions */
-        .border-primary { border-color: #3b82f6; }
-        .bg-card { background-color: #ffffff; }
-    </style>
-</head>
+    </head>
 <body class="min-h-screen">
     
     <nav class="header-bg text-white p-4 shadow-xl">

@@ -197,7 +197,12 @@ function info_box($title, $value, $extra_class = '') {
                     if (($request['type'] ?? '') === 'Budget Request') {
                         $pdf_script = 'generate_budget_pdf.php';
                         $button_text = 'Export Budget Request (PDF)';
-                    } else {
+                    } else if (($request['type'] ?? '') === 'Liquidation Report') {
+                        // Assuming the previous PDF script was named generate_venue_pdf.php
+                        $pdf_script = 'generate_liquidation_pdf.php'; 
+                        $button_text = 'Export Liquidation Report (PDF)';
+                    }
+                    else {
                         // Assuming the previous PDF script was named generate_venue_pdf.php
                         $pdf_script = 'generate_venue_pdf.php'; 
                         $button_text = 'Export Venue/Equipment Request (PDF)';

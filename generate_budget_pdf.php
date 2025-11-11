@@ -30,7 +30,7 @@ $sql = "SELECT
         FROM requests r
         INNER JOIN users u ON r.user_id = u.user_id
         INNER JOIN organizations o ON u.org_id = o.org_id
-        WHERE r.request_id = ? AND r.type = 'Budget Request'"; // 🔑 Ensure it's a Budget Request
+        WHERE r.request_id = ? AND r.type = 'Budget Request'";
 
 $params = [$request_id];
 $types = "i";
@@ -47,9 +47,6 @@ mysqli_stmt_bind_param($stmt, $types, ...$params);
 mysqli_stmt_execute($stmt);
 $result = mysqli_stmt_get_result($stmt);
 $request = mysqli_fetch_assoc($result);
-// --- Budget Data Preparation ---
-$budget_items = [];
-$total_amount = $request['amount'] ?? 0;
 
 // --- Budget Data Preparation ---
 $budget_items = [];

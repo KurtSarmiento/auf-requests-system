@@ -1,0 +1,23 @@
+/* Custom styles from layout_template.php */
+body { 
+    font-family: 'Inter', sans-serif; 
+    background-color: #f8f9fa; /* Off-white / light gray */
+}
+
+/* Custom blue shades for consistency (as defined in inline block) */
+.header-bg { background-color: #1e3a8a; } /* Dark Blue for Header */
+.text-primary { color: #2563eb; } /* Indigo/Blue for primary actions */
+.border-primary { border-color: #3b82f6; }
+.bg-card { background-color: #ffffff; }
+
+/* Custom styles for invalid form fields (from form view) */
+.is-invalid { 
+    border-color: #ef4444 !important; /* Tailwind red-500 equivalent */
+}
+
+/* Custom styles for displaying validation feedback (from form view) */
+.invalid-feedback { 
+    color: #ef4444; /* Tailwind red-500 equivalent */
+    font-size: 0.875rem; 
+    margin-top: 0.25rem; 
+}
