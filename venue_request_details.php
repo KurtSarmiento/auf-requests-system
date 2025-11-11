@@ -79,6 +79,15 @@ start_page("Request Status", $_SESSION['role'], $_SESSION['full_name']);
         Viewing submitted request (read-only)
     </p>
 
+    <a href="generate_venue_pdf.php?id=<?php echo $request_id; ?>" 
+       target="_blank" 
+       class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 mb-6 transition duration-150">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M5 4v3H3a2 2 0 00-2 2v6a2 2 0 002 2h14a2 2 0 002-2v-6a2 2 0 00-2-2h-2V4a2 2 0 00-2-2H7a2 2 0 00-2 2zm4 9V7h2v6h-2zm-4-4h10v2H5V9z" clip-rule="evenodd" />
+        </svg>
+        Print Request PDF
+    </a>
+
     <div class="space-y-4 mb-8 p-6 bg-gray-50 rounded-xl border">
         <h3 class="text-xl font-semibold text-gray-800 border-b pb-2">Request Information</h3>
         <p><strong>Organization:</strong> <?php echo htmlspecialchars($request['org_name']); ?></p>
