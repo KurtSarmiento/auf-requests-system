@@ -188,6 +188,31 @@ function info_box($title, $value, $extra_class = '') {
             </div>
         </div>
 
+        <div class="mt-4 pt-4 border-t border-gray-100 flex justify-end">
+                <?php 
+                    // Determine which PDF link to use based on the request type
+                    $pdf_script = '';
+                    $button_text = 'Export to PDF';
+
+                    if (($request['type'] ?? '') === 'Budget Request') {
+                        $pdf_script = 'generate_budget_pdf.php';
+                        $button_text = 'Export Budget Request (PDF)';
+                    } else {
+                        // Assuming the previous PDF script was named generate_venue_pdf.php
+                        $pdf_script = 'generate_venue_pdf.php'; 
+                        $button_text = 'Export Venue/Equipment Request (PDF)';
+                    }
+                ?>
+                <a href="<?php echo htmlspecialchars($pdf_script); ?>?id=<?php echo (int)$request['request_id']; ?>" 
+                   target="_blank" 
+                   class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
+                    <svg class="-ml-1 mr-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                        <path fill-rule="evenodd" d="M5 4.5a.5.5 0 01.5-.5h9a.5.5 0 010 1H10a.5.5 0 000 1h4.5a.5.5 0 01.5.5v10a.5.5 0 01-.5.5h-9a.5.5 0 01-.5-.5v-10zm.5 10a.5.5 0 000 1h9a.5.5 0 000-1h-9zM10 3a1 1 0 00-1 1v2a1 1 0 102 0V4a1 1 0 00-1-1zM5 8a.5.5 0 01.5-.5h9a.5.5 0 010 1H5.5a.5.5 0 01-.5-.5z" clip-rule="evenodd" />
+                    </svg>
+                    <?php echo $button_text; ?>
+                </a>
+            </div>
+
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
             <div class="lg:col-span-1 space-y-6">

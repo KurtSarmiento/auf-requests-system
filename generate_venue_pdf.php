@@ -201,13 +201,12 @@ $css = '
     margin-top: 2px;
     }
 
-    /* ✅ mPDF-compatible way to put signature above name */
     .signature-img {
     display: block;
     margin: 0 auto;
-    margin-top: -45px; /* pull it upward so it sits above the name */
-    width: 100px;      /* adjust size */
-    opacity: 0.8;      /* optional blend */
+    margin-top: -45px;
+    width: 100px;
+    opacity: 0.8;
     }
 
 

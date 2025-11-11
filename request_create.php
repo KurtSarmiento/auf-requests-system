@@ -34,8 +34,8 @@ if (!empty($_SESSION['org_name'])) {
 }
  
 // Define variables and initialize with empty values
-$title = $type = $amount_str = $description = "";
-$title_err = $type_err = $amount_err = $description_err = $file_err = $general_err = "";
+$title = $type = $amount_str = $description = $budget_details_json = $activity_date = "";
+$title_err = $type_err = $amount_err = $description_err = $file_err = $general_err = $activity_date_err = "";
 
 // Variables for file handling
 $uploaded_file_name = null; // The unique filename on the server
@@ -121,11 +121,60 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $raw_type = $_POST["type"] ?? '';
         $raw_amount = $_POST["amount"] ?? '';
         $raw_description = $_POST["description"] ?? '';
+        $budget_items = [];
+        $budget_details_json = null;
 
         if (empty(trim($raw_title))) {
             $title_err = "Please enter a request title.";
         } else {
             $title = trim($raw_title);
+        }
+
+        if (isset($_POST['item_description']) && is_array($_POST['item_description'])) {
+            $total_calculated_amount = 0.00;
+            $has_valid_items = false;
+
+            foreach ($_POST['item_description'] as $index => $description_item) {
+                $qty = (int)($_POST['item_qty'][$index] ?? 0);
+                $cost = (float)str_replace(',', '', $_POST['item_cost'][$index] ?? 0.00);
+                $description_item = trim($description_item);
+
+                // Simple validation: must have a description, positive quantity, and cost.
+                if (!empty($description_item) && $qty > 0 && $cost >= 0) {
+                    $item_total = $qty * $cost;
+                    $total_calculated_amount += $item_total;
+                    $has_valid_items = true;
+                    
+                    $budget_items[] = [
+                        'description' => $description_item,
+                        'qty' => $qty,
+                        'cost' => $cost,
+                        'total' => $item_total
+                    ];
+                }
+            }
+            
+            if (!$has_valid_items) {
+                // Only set an error if the request type REQUIRES a breakdown (like Budget Request)
+                if ($type === 'Budget Request') {
+                    $general_err = "Please enter at least one valid budget item with a description, quantity, and cost.";
+                }
+            } else {
+                // Check if the calculated total matches the user-entered total (optional but recommended)
+                $user_entered_amount = (float) str_replace(',', '', $raw_amount);
+                if (abs($user_entered_amount - $total_calculated_amount) > 0.01) {
+                    // You can make this an error or just a warning, let's make it a warning.
+                    // For simplicity, we'll let the user's amount override, but warn them.
+                    // A better system would force the form total to match the calculated total.
+                    error_log("Budget breakdown total mismatch: User entered $user_entered_amount, calculated $total_calculated_amount");
+                }
+                $budget_details_json = json_encode($budget_items);
+            }
+        } else {
+            // Check if the request type REQUIRES a breakdown
+            if ($type === 'Budget Request') {
+                $general_err = "Budget request must include itemized breakdown.";
+            }
         }
         
         // Use the hidden field value for submission type
@@ -138,13 +187,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
         $amount_str = trim($raw_amount);
         if ($amount_str === '') {
-            $amount_err = "Please enter an amount.";
-            $amount = null;
+            // ... error handling ...
         } elseif (!is_numeric(str_replace(',', '', $amount_str)) || (float)str_replace(',', '', $amount_str) <= 0) {
-            $amount_err = "Please enter a valid amount (e.g., 500.00).";
-            $amount = null; // Set to null if invalid
+            // ... error handling ...
         } else {
-            $amount = (float) str_replace(',', '', $amount_str);
+            // THIS LINE IS CRUCIAL: It should store a clean float
+            $amount = (float) str_replace(',', '', $amount_str); 
         }
 
         if (empty(trim($raw_description))) {
@@ -228,6 +276,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                         type, 
                         amount, 
                         description, 
+                        budget_details_json,
+                        activity_date,
                         date_submitted,
                         adviser_status,
                         dean_status,
@@ -236,17 +286,19 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                         final_status,
                         notification_status
                     ) 
-                    VALUES (?, ?, ?, ?, ?, NOW(), 'Pending', 'Pending', 'Pending', 'Pending', 'Pending', 'Pending')
+                    VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), 'Pending', 'Pending', 'Pending', 'Pending', 'Pending', 'Pending')
                 ";
                 
                 if ($stmt_request = mysqli_prepare($link, $sql_request)) {
                     // 'issds' -> user_id(i), title(s), type(s), amount(d), description(s)
-                    mysqli_stmt_bind_param($stmt_request, "issds", 
+                    mysqli_stmt_bind_param($stmt_request, "issdsss", 
                         $param_user_id, 
                         $param_title, 
                         $param_type, 
                         $param_amount, 
-                        $param_description
+                        $param_description,
+                        $param_budget_json,
+                        $param_activity_date
                     );
                     
                     $param_user_id = $_SESSION["user_id"];
@@ -254,6 +306,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     $param_type = $type; // Use the validated $type (e.g., 'Budget Request')
                     $param_amount = $amount;
                     $param_description = $description;
+                    $param_budget_json = $budget_details_json;
+                    $param_activity_date = $activity_date;
                     
                     if (mysqli_stmt_execute($stmt_request)) {
                         $request_id = mysqli_insert_id($link);
@@ -381,6 +435,46 @@ start_page("New Venue Request", $_SESSION['role'], $_SESSION['full_name']);
                                value="<?php echo htmlspecialchars($amount_str); ?>" placeholder="e.g. 15000.00" required>
                         <span class="invalid-feedback"><?php echo $amount_err; ?></span>
                     </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label for="activity_date" class="block text-sm font-medium text-gray-700">Date of Activity Implementation</label>
+                            <input type="date" name="activity_date" id="activity_date" 
+                                    class="mt-1 block w-full px-4 py-2 border rounded-lg shadow-sm focus:ring-indigo-500 focus:border-indigo-500 <?php echo (!empty($activity_date_err)) ? 'is-invalid' : 'border-gray-300'; ?>" 
+                                    value="<?php echo htmlspecialchars($activity_date); ?>" required>
+                            <span class="invalid-feedback"><?php echo $activity_date_err; ?></span>
+                        </div>
+                    </div>
+
+                    <div id="budget-breakdown-section" class="space-y-4 pt-4 border-t border-gray-200">
+                        <h3 class="text-xl font-bold text-gray-800">Budget Itemized Breakdown</h3>
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-5/12">Description</th>
+                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/12">Qty</th>
+                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-2/12">Unit Cost (₱)</th>
+                                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-2/12">Total (₱)</th>
+                                    <th class="w-1/12"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="budget-items-container" class="bg-white divide-y divide-gray-200">
+                                </tbody>
+                            <tfoot class="bg-gray-50">
+                                <tr>
+                                    <td colspan="4" class="px-3 py-2 text-right text-sm font-bold text-gray-700">Calculated Total:</td>
+                                    <td class="px-3 py-2 text-left text-sm font-bold text-gray-800" id="calculated-total">₱0.00</td>
+                                    <td></td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                        <button type="button" id="add-item-btn" class="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
+                            + Add Item
+                        </button>
+                        <p class="text-xs text-gray-500 mt-1">
+                            **NOTE:** The Total Amount field above will be automatically calculated or should match the sum of this breakdown.
+                        </p>
+                    </div>
                 </div>
 
                 <div>
@@ -407,5 +501,96 @@ start_page("New Venue Request", $_SESSION['role'], $_SESSION['full_name']);
             </form>
         </div>
     </div>
+    // ... just before the </body> tag ...
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const container = document.getElementById('budget-items-container');
+            const addButton = document.getElementById('add-item-btn');
+            const totalAmountInput = document.getElementById('amount');
+            const calculatedTotalDisplay = document.getElementById('calculated-total');
+
+            function formatCurrency(value) {
+                return '₱' + parseFloat(value).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+            }
+
+            function calculateTotal() {
+                let grandTotal = 0;
+                const rows = container.querySelectorAll('tr');
+                
+                rows.forEach(row => {
+                    const qtyInput = row.querySelector('[name="item_qty[]"]');
+                    const costInput = row.querySelector('[name="item_cost[]"]');
+                    const totalCell = row.querySelector('.item-total');
+
+                    let qty = parseInt(qtyInput.value) || 0;
+                    let cost = parseFloat(costInput.value.replace(/,/g, '')) || 0.00;
+
+                    let itemTotal = qty * cost;
+                    grandTotal += itemTotal;
+                    
+                    totalCell.textContent = formatCurrency(itemTotal);
+                });
+
+                calculatedTotalDisplay.textContent = formatCurrency(grandTotal);
+                
+                // Auto-update the main form's Total Amount field
+                totalAmountInput.value = grandTotal.toFixed(2);
+                
+                // Re-apply currency formatting on the main input field for better UX (optional)
+                totalAmountInput.addEventListener('blur', function() {
+                    let value = parseFloat(this.value.replace(/,/g, '')) || 0;
+                    this.value = value.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+                });
+            }
+
+            function createItemRow(description = '', qty = 1, unit = '', cost = 0.00) {
+                const row = document.createElement('tr');
+                row.className = 'hover:bg-gray-100 transition duration-100';
+                row.innerHTML = `
+                    <td class="px-3 py-2 whitespace-nowrap">
+                        <input type="text" name="item_description[]" value="${description}" class="w-full border-gray-300 rounded-md shadow-sm text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="e.g. A4 Paper Ream" required>
+                    </td>
+                    <td class="px-3 py-2 whitespace-nowrap">
+                        <input type="number" name="item_qty[]" value="${qty}" min="1" class="item-qty w-full border-gray-300 rounded-md shadow-sm text-sm focus:border-indigo-500 focus:ring-indigo-500" required onchange="calculateTotal()" onkeyup="calculateTotal()">
+                    </td>
+                    <td class="px-3 py-2 whitespace-nowrap">
+                        <input type="text" name="item_cost[]" value="${cost.toFixed(2)}" class="item-cost w-full border-gray-300 rounded-md shadow-sm text-sm focus:border-indigo-500 focus:ring-indigo-500" placeholder="0.00" required onchange="calculateTotal()" onkeyup="calculateTotal()">
+                    </td>
+                    <td class="px-3 py-2 whitespace-nowrap item-total text-sm font-medium text-gray-900">${formatCurrency(qty * cost)}</td>
+                    <td class="px-3 py-2 whitespace-nowrap text-right text-sm font-medium">
+                        <button type="button" class="remove-item-btn text-red-600 hover:text-red-900" title="Remove Item">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4m-2 4h4m-4 0h-4"></path></svg>
+                        </button>
+                    </td>
+                `;
+                
+                // Add event listeners to the new row's cost input for real-time calculation and currency formatting
+                row.querySelector('.item-cost').addEventListener('blur', function() {
+                    let value = parseFloat(this.value.replace(/,/g, '')) || 0;
+                    this.value = value.toFixed(2);
+                    calculateTotal();
+                });
+
+                // Add remove functionality
+                row.querySelector('.remove-item-btn').addEventListener('click', function() {
+                    row.remove();
+                    calculateTotal();
+                });
+
+                container.appendChild(row);
+                calculateTotal(); // Recalculate total after adding
+            }
+
+            // Event listener for the "Add Item" button
+            addButton.addEventListener('click', () => createItemRow());
+            
+            // Initial setup: Add one blank row when the page loads
+            createItemRow();
+            
+            // Initial call to set the total to 0.00
+            calculateTotal();
+        });
+    </script>
 </body>
 </html>
