@@ -1,5 +1,6 @@
 <?php
 session_start();
+$cliPdfMode = defined('AUF_PDF_CLI_MODE') && AUF_PDF_CLI_MODE === true;
 require_once __DIR__ . '/vendor/autoload.php'; // Path to mPDF's autoloader
 require_once "db_config.php"; // Database connection setup (assuming $link is available)
 
@@ -7,7 +8,7 @@ use Mpdf\Mpdf;
 use Mpdf\MpdfException;
 
 // Check user authentication and role
-if (!isset($_SESSION["loggedin"]) || $_SESSION["loggedin"] !== true) {
+if (!$cliPdfMode && (!isset($_SESSION["loggedin"]) || $_SESSION["loggedin"] !== true)) {
     header("location: login.php");
     exit;
 }
@@ -403,9 +404,12 @@ try {
     $mpdf->SetTitle("Budget Request #{$request_id}");
     $mpdf->WriteHTML($html);
     
-    // Output the PDF in the browser
     $filename = "Budget_Request_{$request_id}.pdf";
-    $mpdf->Output($filename, 'I'); 
+    if ($cliPdfMode) {
+        echo $mpdf->Output($filename, 'S');
+    } else {
+        $mpdf->Output($filename, 'I');
+    }
     
 } catch (MpdfException $e) {
     echo "mPDF Error: " . $e->getMessage();

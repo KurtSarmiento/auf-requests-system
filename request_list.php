@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 // Initialize the session and include template/config
 session_start();
 require_once "db_config.php";
@@ -42,7 +42,7 @@ $sql_funding = "
         r.final_status, 
         r.notification_status,
         o.org_name,
-        r.type -- ✅ *** FIX 1: Changed 'funding' AS type to r.type ***
+        r.type -- âœ… *** FIX 1: Changed 'funding' AS type to r.type ***
     FROM requests r
     INNER JOIN users u ON r.user_id = u.user_id
     INNER JOIN organizations o ON u.org_id = o.org_id
@@ -114,10 +114,10 @@ usort($requests, fn($a, $b) => strtotime($b['date_submitted']) - strtotime($a['d
 
 // --- 4. Function to determine final status ---
 function get_final_status($request) {
-    // ✅ Trust DB's final_status first
+    // âœ… Trust DB's final_status first
     if (!empty($request['final_status']) && $request['final_status'] !== 'Pending') {
 
-        // ✅ *** FIX 2: LIQUIDATION STATUS FIX ***
+        // âœ… *** FIX 2: LIQUIDATION STATUS FIX ***
         // If the type is 'Liquidation Report' and status is 'Budget Available',
         // just show 'Approved'.
         if (isset($request['type']) && $request['type'] === 'Liquidation Report' && $request['final_status'] === 'Budget Available') {
@@ -127,7 +127,7 @@ function get_final_status($request) {
         return $request['final_status'];
     }
 
-    // 🟣 Handle Venue Requests
+    // ðŸŸ£ Handle Venue Requests
     if (isset($request['type']) && $request['type'] === 'venue') {
         $statuses = [
             $request['vp_admin_status'] ?? 'N/A',
@@ -150,7 +150,7 @@ function get_final_status($request) {
         return 'Pending';
     }
 
-    // 🔵 Handle Funding Requests
+    // ðŸ”µ Handle Funding Requests
     else {
         $statuses = [
             $request['adviser_status'] ?? 'Pending',
@@ -172,95 +172,166 @@ function get_final_status($request) {
         return 'Pending';
     }
 }
+
+$summary = [
+    'total' => count($requests),
+    'approved' => 0,
+    'pending' => 0,
+    'rejected' => 0,
+    'venue' => 0,
+];
+
+foreach ($requests as $req) {
+    if (($req['type'] ?? 'funding') === 'venue') {
+        $summary['venue']++;
+    }
+
+    $final = get_final_status($req);
+    if ($final === 'Rejected') {
+        $summary['rejected']++;
+    } elseif ($final === 'Approved' || $final === 'Budget Available') {
+        $summary['approved']++;
+    } else {
+        $summary['pending']++;
+    }
+}
 ?>
 
-<div class="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
-    <h1 class="text-3xl font-extrabold text-gray-900 mb-6 border-b pb-2">My Submissions</h1>
-    
+<div class="space-y-8 py-4">
+    <section class="page-hero">
+        <span class="hero-pill">Submission Tracker</span>
+        <h2 class="hero-title">Glass-clear history of your AUFthorize filings.</h2>
+        <p class="hero-subtext">
+            Every funding, liquidation, reimbursement, and venue request stays in sync with routing updates
+            so you can focus on execution.
+        </p>
+        <div class="hero-actions">
+            <a href="request_select.php" class="btn-primary">Create request</a>
+            <a href="request_select.php#templates" class="detail-link">View available forms</a>
+        </div>
+    </section>
+
+    <?php if ($summary['total'] > 0): ?>
+    <div class="stat-grid">
+        <div class="stat-card stat-card--accent">
+            <p class="stat-card__label">Total</p>
+            <p class="stat-card__value"><?php echo $summary['total']; ?></p>
+            <p class="stat-card__meta"><?php echo $summary['venue']; ?> venue booking(s) included</p>
+        </div>
+        <div class="stat-card">
+            <p class="stat-card__label">In review</p>
+            <p class="stat-card__value"><?php echo $summary['pending']; ?></p>
+            <p class="stat-card__meta">With advisers and offices</p>
+        </div>
+        <div class="stat-card">
+            <p class="stat-card__label">Approved</p>
+            <p class="stat-card__value"><?php echo $summary['approved']; ?></p>
+            <p class="stat-card__meta">Ready for execution</p>
+        </div>
+        <div class="stat-card">
+            <p class="stat-card__label">Returned</p>
+            <p class="stat-card__value"><?php echo $summary['rejected']; ?></p>
+            <p class="stat-card__meta">Requires revisions</p>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <?php if (empty($requests)): ?>
-        <div class="bg-indigo-50 border-l-4 border-indigo-500 text-indigo-700 p-6 rounded-lg shadow-lg" role="alert">
-            <p class="font-bold">No Requests Submitted Yet!</p>
-            <p>You haven't submitted any Funding or Venue requests. Click the <span class="font-semibold">Create New Request</span> button to start.</p>
+        <div class="subtle-card">
+            <p class="hero-subtext">No requests submitted yet.</p>
+            <p class="text-sm text-slate-500 mt-1">Once you send a budget, liquidation, reimbursement, or venue request it will appear here for easy tracking.</p>
         </div>
     <?php else: ?>
+        <div class="space-y-4">
+            <?php foreach ($requests as $request): 
+                $final_status = get_final_status($request);
+                $is_venue = ($request['type'] ?? 'funding') === 'venue';
+                $detail_page = $is_venue ? 'venue_request_details.php' : 'request_details.php';
+                $submitted_date = date('M d, Y', strtotime($request['date_submitted']));
 
-        <div class="bg-white shadow-xl rounded-xl overflow-hidden mt-8">
-            <table class="min-w-full divide-y divide-gray-200">
-                <thead class="bg-gray-50">
-                    <tr>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID / Type</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title / Organization</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount / Date</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Final Status</th>
-                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Current Status</th>
-                        <th class="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                    </tr>
-                </thead>
-                <tbody class="bg-white divide-y divide-gray-200">
-                    <?php foreach ($requests as $request): 
-                        $final_status = get_final_status($request);
-                        
-                        // ✅ This logic now works, because $final_status will be 'Approved' for Liquidations
-                        $status_class = match ($final_status) {
-                            'Approved' => 'bg-green-100 text-green-800 font-semibold',
-                            'Budget Available' => 'bg-green-100 text-green-800 font-semibold',
-                            'Rejected' => 'bg-red-100 text-red-800 font-semibold',
-                            default => 'bg-yellow-100 text-yellow-800'
-                        };
+                $type_class = 'type-chip';
+                if ($is_venue) {
+                    $type_class .= ' type-chip--venue';
+                } elseif (($request['type'] ?? '') === 'Liquidation Report') {
+                    $type_class .= ' type-chip--liquidation';
+                } elseif (($request['type'] ?? '') === 'Reimbursement') {
+                    $type_class .= ' type-chip--reimbursement';
+                }
 
-                        $is_venue = ($request['type'] ?? 'funding') === 'venue';
-                        $detail_page = $is_venue ? 'venue_request_details.php' : 'request_details.php'; 
-                        
-                        // This logic determines the display label based on the 'type' column
-                        $request_type_label = '';
-                        if ($is_venue) {
-                            $request_type_label = '<span class="text-purple-600 font-bold">VENUE</span>';
-                        } elseif ($request['type'] === 'Liquidation Report') {
-                            $request_type_label = '<span class="text-green-600 font-bold">LIQUIDATION</span>';
-                        } elseif ($request['type'] === 'Reimbursement') {
-                            $request_type_label = '<span class="text-orange-600 font-bold">REIMBURSEMENT</span>';
-                        } else {
-                            // Default for 'Budget Request' or any other funding type
-                            $request_type_label = '<span class="text-blue-600 font-bold">FUNDING</span>';
+                $status_class = 'status-chip pending';
+                if ($final_status === 'Rejected') {
+                    $status_class = 'status-chip rejected';
+                } elseif ($final_status === 'Approved' || $final_status === 'Budget Available') {
+                    $status_class = 'status-chip approved';
+                }
+
+                $pipeline_columns = $is_venue ? [
+                    'admin_services_status' => 'Admin Services',
+                    'cfdo_status' => 'CFDO',
+                    'afo_status' => 'AFO',
+                    'vp_acad_status' => 'VP Acad',
+                    'vp_admin_status' => 'VP Admin'
+                ] : [
+                    'adviser_status' => 'Adviser',
+                    'dean_status' => 'Dean',
+                    'osafa_status' => 'OSAFA',
+                    'afo_status' => 'AFO'
+                ];
+            ?>
+            <article class="list-card space-y-4">
+                <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+                    <div>
+                        <div class="flex items-center gap-3 flex-wrap text-xs text-slate-500">
+                            <span class="<?php echo $type_class; ?>">
+                                <?php echo $is_venue ? 'Venue' : htmlspecialchars($request['type'] ?? 'Funding'); ?>
+                            </span>
+                            <span class="stage-chip">#<?php echo htmlspecialchars($request['request_id']); ?></span>
+                        </div>
+                        <h3 class="text-xl font-semibold text-slate-900 mt-2"><?php echo htmlspecialchars($request['title']); ?></h3>
+                        <p class="text-sm text-slate-500 mt-1"><?php echo htmlspecialchars($request['org_name']); ?></p>
+                    </div>
+                    <div class="text-sm text-slate-600 text-left lg:text-right">
+                        <p class="font-semibold text-slate-900">Submitted <?php echo $submitted_date; ?></p>
+                        <?php if (!$is_venue): ?>
+                            <p class="text-emerald-700 font-semibold mt-1">&#8369;<?php echo number_format($request['amount'], 2); ?></p>
+                        <?php else: ?>
+                            <p class="text-slate-500 italic mt-1">No budget requested</p>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+                    <div class="flex flex-wrap items-center gap-3">
+                        <span class="<?php echo $status_class; ?>">
+                            <?php echo htmlspecialchars($final_status); ?>
+                        </span>
+                        <span class="flow-pill">
+                            Stage: <?php echo htmlspecialchars($request['notification_status']); ?>
+                        </span>
+                    </div>
+                    <a href="<?php echo $detail_page; ?>?id=<?php echo $request['request_id']; ?>" class="detail-link">
+                        View details
+                    </a>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                    <?php foreach ($pipeline_columns as $column => $label):
+                        $value = $request[$column] ?? 'Pending';
+                        $pill_class = 'flow-pill';
+                        if ($value === 'Approved') {
+                            $pill_class .= ' approved';
+                        } elseif ($value === 'Rejected') {
+                            $pill_class .= ' rejected';
                         }
                     ?>
-                    <tr class="hover:bg-gray-50">
-                        <td class="px-6 py-4 text-sm font-medium text-gray-900">
-                            #<?php echo htmlspecialchars($request['request_id']); ?><br>
-                            <?php echo $request_type_label; ?>
-                        </td>
-                        <td class="px-6 py-4 text-sm text-gray-700">
-                            <div class="text-base font-semibold text-gray-900 truncate max-w-xs"><?php echo htmlspecialchars($request['title']); ?></div>
-                            <div class="text-xs text-gray-500 mt-1"><?php echo htmlspecialchars($request['org_name']); ?></div>
-                        </td>
-                        <td class="px-6 py-4 text-sm text-gray-700">
-                            <?php if (!$is_venue): ?>
-                                <span class="font-semibold text-green-700">₱<?php echo number_format($request['amount'], 2); ?></span>
-                            <?php else: ?>
-                                <span class="text-sm text-gray-500 italic">N/A</span>
-                            <?php endif; ?>
-                            <br>
-                            <span class="text-xs text-gray-500"><?php echo date('M d, Y', strtotime($request['date_submitted'])); ?></span>
-                        </td>
-                        <td class="px-6 py-4 whitespace-nowrap">
-                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?php echo $status_class; ?>">
-                                <?php echo $final_status; ?>
-                            </span>
-                        </td>
-                        <td class="px-6 py-4 text-sm text-gray-700">
-                            <?php echo htmlspecialchars($request['notification_status']); ?>
-                        </td>
-                        <td class="px-6 py-4 text-center text-sm font-medium">
-                            <a href="<?php echo $detail_page; ?>?id=<?php echo $request['request_id']; ?>" 
-                               class="text-blue-600 hover:text-blue-900 transition duration-150 font-semibold">
-                                View Details
-                            </a>
-                        </td>
-                    </tr>
+                        <span class="<?php echo $pill_class; ?>">
+                            <span class="font-semibold tracking-[0.2em] text-[10px]"><?php echo $label; ?></span>
+                            <?php echo htmlspecialchars($value); ?>
+                        </span>
                     <?php endforeach; ?>
-                </tbody>
-            </table>
+                </div>
+            </article>
+            <?php endforeach; ?>
         </div>
     <?php endif; ?>
+</div>
 
 <?php end_page(); ?>

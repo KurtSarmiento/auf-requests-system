@@ -3,6 +3,7 @@
 session_start();
 require_once "db_config.php";
 require_once "layout_template.php"; // Include the layout functions
+require_once "helpers/pdf_mailer.php";
 
 // Ensure only admin roles can access
 $admin_roles = ['Dean', 'Admin Services', 'OSAFA', 'CFDO', 'AFO', 'VP for Academic Affairs', 'VP for Administration'];
@@ -139,8 +140,15 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0 && $role_data) {
                     $greeting = "Dear $recipientName,";
                     $message = "Your venue request has been <strong>rejected</strong> by the $current_role. Please see the details and reason below.";
                     
+                    $attachments = [];
+                    $venuePdf = generateVenuePdfAttachment($link, $request_id);
+                    if ($venuePdf) {
+                        $attachments[] = $venuePdf;
+                    }
+
                     $body = buildEmailTemplate($greeting, $message, $details_table, "Reason for Rejection", $remark_text);
-                    sendNotificationEmail($recipientEmail, $subject, $body);
+                    sendNotificationEmail($recipientEmail, $subject, $body, $attachments);
+                    cleanupGeneratedPdf($venuePdf ?? null);
                 }
                 
                 // Trigger 2: Request is Approved by VP for Administration (Final Step)
@@ -149,8 +157,15 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0 && $role_data) {
                     $greeting = "Dear $recipientName,";
                     $message = "Good news! Your venue request has been <b>fully approved</b>. Please see the confirmed details below.";
                     
+                    $attachments = [];
+                    $venuePdf = generateVenuePdfAttachment($link, $request_id);
+                    if ($venuePdf) {
+                        $attachments[] = $venuePdf;
+                    }
+
                     $body = buildEmailTemplate($greeting, $message, $details_table);
-                    sendNotificationEmail($recipientEmail, $subject, $body);
+                    sendNotificationEmail($recipientEmail, $subject, $body, $attachments);
+                    cleanupGeneratedPdf($venuePdf ?? null);
                 }
             }
             // ===============================================

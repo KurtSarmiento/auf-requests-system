@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 // Initialize the session and include template/config
 session_start();
 require_once "db_config.php";
@@ -140,7 +140,7 @@ $sql_rejected = "({$status_column} = 'Rejected')";
 // This logic ensures we only count if the previous role approved
 $funding_pending_condition = "";
 if (in_array($role, $funding_review_roles)) {
-    // ✅ AFO LOGIC: Modify the base pending condition for AFO
+    // âœ… AFO LOGIC: Modify the base pending condition for AFO
     if ($role === 'AFO') {
          $funding_pending_condition = "({$status_column} = 'Pending' OR final_status = 'Budget Processing')";
     } else {
@@ -201,10 +201,10 @@ if (!empty($status_column) && empty($error_message)) {
 
     // --- Execute Funding Query (if applicable) ---
     if ($query_funding && !empty($funding_pending_condition)) {
-        // ✅ AFO LOGIC: Modify approved condition for AFO
+        // âœ… AFO LOGIC: Modify approved condition for AFO
         $funding_approved_condition = $sql_approved;
         if($role === 'AFO') {
-            // ✅ *** FIX 1: Count Budget Available (for Budget/Reimburse) AND Approved (for Liquidation) ***
+            // âœ… *** FIX 1: Count Budget Available (for Budget/Reimburse) AND Approved (for Liquidation) ***
             $funding_approved_condition = "(final_status = 'Budget Available' OR (final_status = 'Approved' AND r.type = 'Liquidation Report'))";
         }
         
@@ -260,66 +260,66 @@ if (isset($link) && $link instanceof mysqli) { // Check if link is valid before 
 
 // Start the page using the template function
 start_page("Admin Dashboard", $role, $full_name);
-
 ?>
 
-<h2 class="text-5xl font-extrabold text-gray-900 mb-2">Welcome Back, <?php echo htmlspecialchars(explode(' ', $full_name)[0]); ?>!</h2>
-<p class="text-xl text-gray-600 mb-10">
-    Review Dashboard for the <span class="font-bold text-blue-700"><?php echo htmlspecialchars($role_description); ?></span>.
-</p>
+<div class="space-y-10">
+    <section class="page-hero">
+        <div class="grid gap-8 lg:grid-cols-2 lg:items-start">
+            <div>
+                <span class="hero-pill">Reviewer Panel</span>
+                <h2 class="hero-title">
+                    Ready for <?php echo htmlspecialchars($role_description ?: $role); ?> decisions.
+                </h2>
+                <p class="hero-subtext">
+                    Requests that passed earlier checkpoints queue here with every routing milestone visible.
+                    Keep the flow glass-clear by acting on items awaiting your signature.
+                </p>
+                <div class="hero-actions">
+                    <a href="admin_request_list.php" class="btn-primary">Open queue</a>
+                    <a href="admin_history_list.php" class="detail-link">Review history</a>
+                </div>
+            </div>
 
-<?php if (!empty($error_message)): ?>
-    <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6" role="alert">
-        <p class="font-bold">Configuration Error</p>
-        <p><?php echo htmlspecialchars($error_message); ?></p>
-    </div>
-<?php endif; ?>
+    </section>
 
-<div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12 max-w-4xl">
-    <a href="admin_request_list.php" class="bg-blue-600 hover:bg-blue-700 text-white p-8 rounded-xl shadow-2xl transition duration-300 transform hover:scale-[1.03] flex flex-col justify-center">
-        <h3 class="text-3xl font-bold mb-1">View Review Queue</h3>
-        <p class="text-sm opacity-90 font-light">See all requests currently pending your action.</p>
-    </a>
-    
-    <a href="admin_history_list.php" class="bg-sky-700 hover:bg-sky-800 text-white p-8 rounded-xl shadow-2xl transition duration-300 transform hover:scale-[1.03] flex flex-col justify-center">
-        <h3 class="text-3xl font-bold mb-1">View Request History</h3>
-        <p class="text-sm opacity-90 font-light">See all requests you have previously approved or rejected.</p>
-    </a>
+    <?php if (!empty($error_message)): ?>
+        <div class="subtle-card" style="background: rgba(255, 228, 230, 0.6); border-color: rgba(244, 63, 94, 0.3);">
+            <p class="text-sm font-semibold text-rose-700">Configuration Error</p>
+            <p class="text-sm text-rose-600 mt-2"><?php echo htmlspecialchars($error_message); ?></p>
+        </div>
+    <?php endif; ?>
+
+    <section>
+        <div class="stat-grid">
+            <div class="stat-card stat-card--accent">
+                <p class="stat-card__label">Pending your action</p>
+                <p class="stat-card__value"><?php echo $pending_count; ?></p>
+                <p class="stat-card__meta">Items routed to your office</p>
+            </div>
+            <div class="stat-card">
+                <p class="stat-card__label">Approved</p>
+                <p class="stat-card__value"><?php echo $approved_count; ?></p>
+                <p class="stat-card__meta">
+                    <?php 
+                    if ($role === 'AFO') {
+                        echo 'Budget availability confirmations issued';
+                    } else {
+                        echo 'Requests cleared on your stage';
+                    }
+                    ?>
+                </p>
+            </div>
+            <div class="stat-card">
+                <p class="stat-card__label">Returned</p>
+                <p class="stat-card__value"><?php echo $rejected_count; ?></p>
+                <p class="stat-card__meta">Items you sent back for revision</p>
+            </div>
+        </div>
+    </section>
 </div>
 
-<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-
-    <div class="bg-white p-6 rounded-xl shadow-lg border-2 border-red-400 flex flex-col items-start">
-        <p class="text-sm font-semibold text-red-600 uppercase tracking-wider">Pending Your Review</p>
-        <p class="text-5xl font-extrabold text-red-700 mt-2"><?php echo $pending_count; ?></p>
-        <p class="text-xs text-gray-500 mt-2">Requires immediate action</p>
-    </div>
-
-    <div class="bg-white p-6 rounded-xl shadow-lg border-2 border-teal-400 flex flex-col items-start">
-        <p class="text-sm font-semibold text-teal-600 uppercase tracking-wider">Approved by You</p>
-        <p class="text-5xl font-extrabold text-teal-700 mt-2"><?php echo $approved_count; ?></p>
-        <p class="text-xs text-gray-500 mt-2">
-            <?php 
-            // ✅ AFO LOGIC: Update description for the 'Approved' count box
-            if ($role === 'AFO') {
-                // ✅ *** FIX 2: Update helper text to be more accurate ***
-                echo 'Total requests approved or made available by you'; 
-            } else {
-                echo 'Total requests approved in your stage';
-            }
-            ?>
-        </p>
-    </div>
-
-    <div class="bg-white p-6 rounded-xl shadow-lg border-2 border-gray-100 flex flex-col items-start">
-        <p class="text-sm font-semibold text-gray-500 uppercase tracking-wider">Rejected by You</p>
-        <p class="text-5xl font-extrabold text-gray-500 mt-2"><?php echo $rejected_count; ?></p>
-        <p class="text-xs text-gray-500 mt-2">Requests you have denied</p>
-    </div>
-
-</div>
-
-<?php
-// End the page using the template function
+<?php // End the page using the template function
 end_page();
 ?>
+
+

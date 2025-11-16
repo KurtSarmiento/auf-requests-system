@@ -1,6 +1,6 @@
-<?php
+﻿<?php
 // Initialize the session tite puke
-session_start(); // ✅ Required to track logged-in user
+session_start(); // âœ… Required to track logged-in user
 
 // Check if the user is logged in and NOT an Officer (i.e., a Signatory)
 if (!isset($_SESSION["loggedin"]) || $_SESSION["loggedin"] !== true) {
@@ -10,6 +10,7 @@ if (!isset($_SESSION["loggedin"]) || $_SESSION["loggedin"] !== true) {
 
 
 require_once "db_config.php";
+require_once "layout_template.php";
 
 // === ADMIN ROLE NORMALIZATION AND CHECK ===
 $admin_roles = [
@@ -95,7 +96,7 @@ if (!$role_column) {
 }
 
 // Function for CSS class
-// ✅ MODIFIED TO INCLUDE NEW STATUSES
+// âœ… MODIFIED TO INCLUDE NEW STATUSES
 if (!function_exists('get_status_class')) {
     function get_status_class($status) {
         switch ($status) {
@@ -114,9 +115,9 @@ if (!function_exists('get_status_class')) {
             case 'Awaiting VP for Administration Approval':
             case 'Pending': // Added Pending here explicitly
                 return 'bg-yellow-100 text-yellow-800 border-yellow-500';
-            case 'Available': // ✅ NEW
+            case 'Available': // âœ… NEW
                 return 'bg-emerald-100 text-emerald-800 border-emerald-500 font-bold';
-            case 'Budget Processing': // ✅ NEW
+            case 'Budget Processing': // âœ… NEW
                 return 'bg-blue-100 text-blue-800 border-blue-500';
             default:
                 return 'bg-gray-100 text-gray-800 border-gray-500'; // Default fallback
@@ -149,7 +150,7 @@ if ($current_role === 'Adviser') {
 // --- 2. Funding Requests SQL ---
 if (empty($error_message) && in_array($target_tables, ['requests', 'both'])) {
     
-    // ✅ MODIFIED AFO WHERE CLAUSE
+    // âœ… MODIFIED AFO WHERE CLAUSE
     $funding_where_clause = "";
     if ($current_role === 'AFO') {
         // AFO sees requests where afo_status is Pending OR final_status is Budget Processing
@@ -184,7 +185,7 @@ if (empty($error_message) && in_array($target_tables, ['requests', 'both'])) {
             NULL AS vp_acad_status,
             NULL AS vp_admin_status,
             r.notification_status,
-            r.final_status, -- ✅ ADDED final_status
+            r.final_status, -- âœ… ADDED final_status
             o.org_name,
             u.full_name AS submitted_by,
             'Funding' AS request_type,
@@ -227,7 +228,7 @@ if (empty($error_message) && in_array($target_tables, ['venue_requests', 'both']
         vr.vp_acad_status,
         vr.vp_admin_status,
         vr.notification_status,
-        vr.final_status, -- ✅ ADDED final_status
+        vr.final_status, -- âœ… ADDED final_status
         o.org_name,
         u.full_name AS submitted_by,
         'Venue' AS request_type,
@@ -248,7 +249,7 @@ if (empty($error_message)) {
         // This is not an error, it just means the queue is empty.
         $requests = [];
     } else {
-        // ✅ Converted from prepared statement to mysqli_query()
+        // âœ… Converted from prepared statement to mysqli_query()
         $result = mysqli_query($link, $sql);      
         if ($result) {
             $requests = mysqli_fetch_all($result, MYSQLI_ASSOC);
@@ -263,149 +264,165 @@ if (empty($error_message)) {
 if (isset($link) && $link instanceof mysqli) {
     mysqli_close($link);
 }
+
+$queue_total = is_array($requests) ? count($requests) : 0;
+$funding_total = 0;
+$venue_total = 0;
+$oldest_submission = null;
+
+if (!empty($requests)) {
+    foreach ($requests as $req) {
+        if (($req['request_type'] ?? 'Funding') === 'Funding') {
+            $funding_total++;
+        } else {
+            $venue_total++;
+        }
+        $submitted = strtotime($req['date_submitted']);
+        if ($submitted && ($oldest_submission === null || $submitted < $oldest_submission)) {
+            $oldest_submission = $submitted;
+        }
+    }
+}
 ?>
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Review Queue | AUF Admin System</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        body { font-family: 'Inter', sans-serif; background-color: #f4f7f9; }
-        .status-pill {
-            padding: 4px 8px;
-            border-radius: 9999px;
-            font-size: 0.65rem;
-            font-weight: 600;
-            border: 1px solid;
-            display: inline-block;
-            margin: 2px 0;
-            line-height: 1;
-        }
-        .type-tag {
-            font-size: 0.65rem;
-            font-weight: 700;
-            padding: 2px 6px;
-            border-radius: 4px;
-            display: inline-block;
-            line-height: 1;
-            margin-bottom: 4px;
-        }
-    </style>
-</head>
-<body class="min-h-screen">
-    <div class="bg-indigo-900 text-white p-4 shadow-lg flex justify-between items-center">
-        <h1 class="text-xl font-bold">AUF Admin Panel</h1>
-        <div class="flex items-center space-x-4">
-            <a href="admin_dashboard.php" class="hover:text-indigo-200">Dashboard</a>
-            <a href="admin_request_list.php" class="text-yellow-300 font-bold">Review Queue</a>
-            <span class="text-sm font-light">Logged in as: <b><?php echo htmlspecialchars($_SESSION["full_name"]); ?></b></span>
-            <a href="logout.php" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-lg">Logout</a>
+<?php start_page("Admin Review Queue", $current_role, $_SESSION["full_name"]); ?>
+<div class="space-y-8 py-4">
+    <section class="page-hero">
+        <div class="grid gap-6 lg:grid-cols-2 lg:items-center">
+            <div>
+                <span class="hero-pill">Review Queue</span>
+                <h2 class="hero-title">Requests awaiting <?php echo htmlspecialchars($current_role); ?>.</h2>
+                <p class="hero-subtext">Funding packages and venue bookings sit in one translucent queue once prerequisites sign off.</p>
+                <div class="hero-actions">
+                    <?php if ($oldest_submission): ?>
+                        <span class="filter-pill">Oldest submission <?php echo date('M d, Y', $oldest_submission); ?></span>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <div class="subtle-card space-y-2">
+                <p class="text-xs uppercase tracking-[0.4em] text-slate-500">Routing</p>
+                <p class="text-sm text-slate-600">
+                    Only items cleared by required offices reach you. Filters respect organization links where applicable.
+                </p>
+            </div>
+        </div>
+    </section>
+
+    <div class="stat-grid">
+        <div class="stat-card stat-card--accent">
+            <p class="stat-card__label">Total queue</p>
+            <p class="stat-card__value"><?php echo $queue_total; ?></p>
+            <p class="stat-card__meta">Awaiting your decision</p>
+        </div>
+        <div class="stat-card">
+            <p class="stat-card__label">Funding</p>
+            <p class="stat-card__value"><?php echo $funding_total; ?></p>
+            <p class="stat-card__meta">Budget / liquidation / reimbursement</p>
+        </div>
+        <div class="stat-card">
+            <p class="stat-card__label">Venue</p>
+            <p class="stat-card__value"><?php echo $venue_total; ?></p>
+            <p class="stat-card__meta">Facility bookings</p>
         </div>
     </div>
 
-    <div class="container mx-auto p-4 sm:p-8">
-        <h2 class="text-3xl font-extrabold text-gray-900 mb-6">
-            Requests Awaiting <?php echo htmlspecialchars($current_role); ?> Review
-        </h2>
-
-        <?php if ($error_message): ?>
-            <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6 rounded-lg">
-                <p class="font-bold">Error</p>
-                <p><?php echo htmlspecialchars($error_message); ?></p>
-            </div>
-        <?php endif; ?>
-
-        <?php if (empty($requests) && empty($error_message)): ?>
-            <div class="bg-green-100 border-l-4 border-green-500 text-green-700 p-6 rounded-xl shadow-md">
-                <p class="font-bold text-xl">Review Queue Clear! 🎉</p>
-                <p class="mt-2">There are no pending requests requiring your <?php echo htmlspecialchars($current_role); ?> approval.</p>
-            </div>
-        <?php elseif (!empty($requests)): ?>
-            <div class="bg-white shadow-xl overflow-hidden sm:rounded-lg">
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type / Title</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Organization / Submitted By</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount / Date</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Approval Status</th>
-                            <th class="relative px-6 py-3"><span class="sr-only">Action</span></th>
-                        </tr>
-                    </thead>
-                    <tbody class="bg-white divide-y divide-gray-200">
-                        <?php foreach ($requests as $request):
-                            $type_tag_class = ($request['request_type'] === 'Funding') ? 'bg-indigo-500 text-white' : 'bg-pink-500 text-white';
-                            $review_page = ($request['request_type'] === 'Funding') ? 'admin_review.php' : 'admin_venue_review.php';
-                            
-                            // Determine display type
-                            $display_type = ($request['request_type'] === 'Venue') ? 'Venue' : $request['funding_type']; // Budget, Liquidation, etc.
-
-                        ?>
-                        <tr class="hover:bg-indigo-50">
-                            <td class="px-6 py-4 whitespace-nowrap">
-                                <span class="type-tag <?php echo $type_tag_class; ?>"><?php echo htmlspecialchars($display_type); ?></span>
-                                <div class="text-sm font-bold text-indigo-600">#<?php echo htmlspecialchars($request['request_id']); ?></div>
-                                <div class="text-sm font-medium text-gray-900 truncate max-w-xs"><?php echo htmlspecialchars($request['title']); ?></div>
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap">
-                                <div class="text-sm text-gray-900"><?php echo htmlspecialchars($request['org_name']); ?></div>
-                                <div class="text-xs text-gray-500"><?php echo htmlspecialchars($request['submitted_by']); ?></div>
-
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap">
-                                <?php if ($request['request_type'] === 'Funding'): ?>
-                                    <div class="text-sm font-semibold text-gray-900">₱<?php echo number_format((float)$request['amount'], 2); ?></div>
-                                <?php else: ?>
-                                    <div class="text-sm font-semibold text-gray-400">Venue Request</div>
-                                <?php endif; ?>
-                                <div class="text-xs text-gray-500"><?php echo date('M d, Y', strtotime($request['date_submitted'])); ?></div>
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                <?php
+    <?php if ($error_message): ?>
+        <div class="subtle-card" style="background: rgba(255, 228, 230, 0.6); border-color: rgba(244, 63, 94, 0.3);">
+            <p class="text-sm font-semibold text-rose-700">Error</p>
+            <p class="text-sm text-rose-600 mt-2"><?php echo htmlspecialchars($error_message); ?></p>
+        </div>
+    <?php elseif (empty($requests)): ?>
+        <div class="subtle-card">
+            <p class="hero-subtext">Nothing to review.</p>
+            <p class="text-sm text-slate-500 mt-1">There are no pending requests requiring your approval.</p>
+        </div>
+    <?php else: ?>
+        <div class="table-shell overflow-x-auto">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Type</th>
+                        <th>Request</th>
+                        <th>Organization</th>
+                        <th>Amount</th>
+                        <th>Submitted</th>
+                        <th>Routing Status</th>
+                        <th class="text-right">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($requests as $request):
+                        $is_funding = ($request['request_type'] ?? 'Funding') === 'Funding';
+                        $review_page = $is_funding ? 'admin_review.php' : 'admin_venue_review.php';
+                        $display_type = $is_funding ? ($request['funding_type'] ?? 'Funding') : 'Venue';
+                    ?>
+                    <tr>
+                        <td>
+                            <div class="flex flex-col gap-1">
+                                <span class="type-chip"><?php echo htmlspecialchars($display_type); ?></span>
+                                <span class="stage-chip">#<?php echo htmlspecialchars($request['request_id']); ?></span>
+                            </div>
+                        </td>
+                        <td>
+                            <p class="font-semibold text-slate-900"><?php echo htmlspecialchars($request['title']); ?></p>
+                        </td>
+                        <td>
+                            <p class="font-semibold text-slate-900"><?php echo htmlspecialchars($request['org_name']); ?></p>
+                            <p class="text-xs text-slate-500 mt-0.5"><?php echo htmlspecialchars($request['submitted_by']); ?></p>
+                        </td>
+                        <td>
+                            <?php if ($is_funding): ?>
+                                <p class="font-semibold text-emerald-700">&#8369;<?php echo number_format((float)$request['amount'], 2); ?></p>
+                            <?php else: ?>
+                                <p class="text-sm text-slate-500">N/A</p>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <p class="text-sm text-slate-700"><?php echo date('M d, Y', strtotime($request['date_submitted'])); ?></p>
+                        </td>
+                        <td>
+                            <div class="flex flex-wrap gap-2">
+                                <?php 
                                 $status_columns = [
-                                    'adviser_status' => 'ADVISER',
-                                    'dean_status' => 'DEAN',
-                                    'admin_services_status' => 'ADMIN SVC',
+                                    'adviser_status' => 'Adviser',
+                                    'dean_status' => 'Dean',
+                                    'admin_services_status' => 'Admin',
                                     'osafa_status' => 'OSAFA',
                                     'cfdo_status' => 'CFDO',
                                     'afo_status' => 'AFO',
-                                    'vp_acad_status' => 'VP ACAD',
-                                    'vp_admin_status' => 'VP ADMIN',
+                                    'vp_acad_status' => 'VP Acad',
+                                    'vp_admin_status' => 'VP Admin'
                                 ];
-                                
-                                // ✅ AFO LOGIC: Determine what status to show AFO
-                                $display_status_for_me = $request[$role_column]; // Default is 'Pending'
-                                if ($current_role === 'AFO' && $request['request_type'] === 'Funding' && $request['final_status'] === 'Budget Processing') {
-                                    $display_status_for_me = 'Budget Processing';
-                                }
-                                
-                                // Show my current status first, highlighted
-                                echo '<span class="status-pill ' . get_status_class($display_status_for_me) . ' border-2 border-blue-500">' .
-                                             htmlspecialchars($current_role) . ': ' . htmlspecialchars($display_status_for_me) . '</span><br>';
-
-                                // Show statuses of OTHER approvers
-                                foreach ($status_columns as $col_name => $label) {
-                                    $status_value = isset($request[$col_name]) ? $request[$col_name] : NULL;
-                                    // Show if status exists AND is not my own status column
-                                    if ($status_value !== NULL && $col_name !== $role_column) {
-                                        echo '<span class="status-pill ' . get_status_class($status_value) . '">' .
-                                             htmlspecialchars($label) . ': ' . htmlspecialchars($status_value) . '</span>';
+                                foreach ($status_columns as $column => $label):
+                                    if (!isset($request[$column]) || $request[$column] === null) continue;
+                                    $value = $request[$column];
+                                    $pill_class = 'flow-pill';
+                                    if ($value === 'Approved') {
+                                        $pill_class .= ' approved';
+                                    } elseif ($value === 'Rejected') {
+                                        $pill_class .= ' rejected';
                                     }
-                                }
                                 ?>
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                <a href="<?php echo htmlspecialchars($review_page); ?>?id=<?php echo htmlspecialchars($request['review_link_id']); ?>" class="text-indigo-600 hover:text-indigo-900 font-semibold">Review & Decide →</a>
-                            </td>
-                        </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
-        <?php endif; ?>
-    </div>
-</body>
-</html>
+                                    <span class="<?php echo $pill_class; ?>">
+                                        <span class="font-semibold tracking-[0.2em] text-[10px]"><?php echo $label; ?></span>
+                                        <?php echo htmlspecialchars($value); ?>
+                                    </span>
+                                <?php endforeach; ?>
+                            </div>
+                        </td>
+                        <td class="text-right">
+                            <a href="<?php echo $review_page; ?>?id=<?php echo $request['review_link_id']; ?>" class="detail-link">
+                                Review
+                            </a>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    <?php endif; ?>
+</div>
+<?php end_page(); ?><?php end_page(); ?>
+
+
+

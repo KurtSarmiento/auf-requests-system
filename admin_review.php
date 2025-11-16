@@ -6,6 +6,7 @@
 session_start();
 require_once "db_config.php";
 require_once "layout_template.php"; // Include the layout functions
+require_once "helpers/pdf_mailer.php";
 
 // ✅ Allowed roles based on your table columns
 $admin_roles = ['Adviser', 'Dean', 'OSAFA', 'AFO'];
@@ -141,8 +142,18 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
                     ];
 
                     // NEW: Use the template builder
+                    $attachments = [];
+                    $fundingPdf = generateFundingPdfAttachment($link, $request_id);
+                    if ($fundingPdf) {
+                        $attachments[] = $fundingPdf;
+                    }
+
                     $body = buildEmailTemplate($greeting, $message, $details);
-                    sendNotificationEmail($recipientEmail, $subject, $body);
+                    sendNotificationEmail($recipientEmail, $subject, $body, $attachments);
+
+                    if ($fundingPdf) {
+                        cleanupGeneratedPdf($fundingPdf);
+                    }
                 }
                 // === END: UPGRADED EMAIL LOGIC (Budget Available) ===
 
@@ -229,8 +240,15 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
                         ];
 
                         // NEW: Use template builder with the reason
+                        $attachments = [];
+                        $rejectionPdf = generateFundingPdfAttachment($link, $request_id);
+                        if ($rejectionPdf) {
+                            $attachments[] = $rejectionPdf;
+                        }
+
                         $body = buildEmailTemplate($greeting, $message, $details, "Reason for Rejection", $remark_text);
-                        sendNotificationEmail($recipientEmail, $subject, $body);
+                        sendNotificationEmail($recipientEmail, $subject, $body, $attachments);
+                        cleanupGeneratedPdf($rejectionPdf ?? null);
                     }
                 // === END: UPGRADED EMAIL LOGIC (Rejection) ===
 
@@ -244,6 +262,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
                             "Request Title" => $officerDetails['activity_name'],
                             "Request Type" => $officerDetails['type'] // This will now show 'Liquidation Report' correctly
                         ];
+
+                        $attachments = [];
+                        $pdfAttachment = generateFundingPdfAttachment($link, $request_id);
+                        if ($pdfAttachment) {
+                            $attachments[] = $pdfAttachment;
+                        }
 
                         if ($request_type_for_post === 'Liquidation Report') {
                             // --- Email for Liquidation ---
@@ -259,7 +283,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
                         }
                         
                         $body = buildEmailTemplate($greeting, $message, $details);
-                        sendNotificationEmail($officerDetails['email'], $subject, $body);
+                        sendNotificationEmail($officerDetails['email'], $subject, $body, $attachments);
+
+                        cleanupGeneratedPdf($pdfAttachment);
                     }
                 }
                 // ✅ *** END: AFO Approval Email Logic ***
@@ -338,6 +364,50 @@ if ($request_id > 0) {
     $error_message = "Invalid request ID.";
 }
 
+// Prepare descriptive and financial breakdown details for display
+$budget_breakdown = [];
+$budget_breakdown_total = 0;
+$breakdown_heading = 'Budget Breakdown';
+$type_for_breakdown = '';
+
+if ($request) {
+    $type_for_breakdown = $request['type'] ?? '';
+    if ($type_for_breakdown === 'Liquidation Report') {
+        $breakdown_heading = 'Expense Breakdown';
+    } elseif ($type_for_breakdown === 'Reimbursement') {
+        $breakdown_heading = 'Reimbursement Breakdown';
+    }
+
+    if (!empty($request['budget_details_json'])) {
+        $decoded_breakdown = json_decode($request['budget_details_json'], true);
+
+        if (is_array($decoded_breakdown)) {
+            foreach ($decoded_breakdown as $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+
+                $line_description = trim((string)($item['description'] ?? ''));
+                $line_qty = isset($item['qty']) ? (int)$item['qty'] : 0;
+                $line_cost = isset($item['cost']) ? (float)$item['cost'] : 0.0;
+
+                if ($line_description === '' && $line_qty === 0 && $line_cost === 0.0) {
+                    continue;
+                }
+
+                $line_total = $line_qty * $line_cost;
+                $budget_breakdown_total += $line_total;
+                $budget_breakdown[] = [
+                    'description' => $line_description !== '' ? $line_description : 'Unspecified line item',
+                    'qty' => $line_qty,
+                    'cost' => $line_cost,
+                    'total' => $line_total
+                ];
+            }
+        }
+    }
+}
+
 // Start the page
 start_page("Review Funding Request", $current_role, $_SESSION["full_name"]);
 
@@ -377,6 +447,84 @@ start_page("Review Funding Request", $current_role, $_SESSION["full_name"]);
                 <div class="text-4xl font-bold text-gray-800 mt-4">
                     ₱<?php echo number_format($request['amount'], 2); ?>
                 </div>
+            </div>
+
+            <div class="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
+                <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
+                    <h3 class="text-xl font-semibold text-gray-800">Purpose & Narrative</h3>
+                    <?php if (!empty($request['activity_date'])): ?>
+                        <span class="text-sm font-medium text-gray-500">
+                            Activity Date: <?php echo date('M d, Y', strtotime($request['activity_date'])); ?>
+                        </span>
+                    <?php endif; ?>
+                </div>
+                <div class="prose max-w-none text-gray-700 leading-relaxed">
+                    <?php
+                        $description_copy = trim((string)($request['description'] ?? ''));
+                        echo $description_copy !== ''
+                            ? nl2br(htmlspecialchars($description_copy))
+                            : '<p class="text-sm text-gray-500 italic">No description was provided for this submission.</p>';
+                    ?>
+                </div>
+            </div>
+
+            <div class="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
+                <div class="flex flex-wrap items-center justify-between gap-4">
+                    <h3 class="text-xl font-semibold text-gray-800"><?php echo htmlspecialchars($breakdown_heading); ?></h3>
+                    <?php if ($budget_breakdown_total > 0): ?>
+                        <span class="px-3 py-1 rounded-full text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200">
+                            Computed Total: &#8369;<?php echo number_format($budget_breakdown_total, 2); ?>
+                        </span>
+                    <?php endif; ?>
+                </div>
+
+                <?php if (!empty($budget_breakdown)): ?>
+                    <div class="overflow-x-auto mt-4">
+                        <table class="min-w-full divide-y divide-gray-200 text-sm">
+                            <thead class="bg-indigo-50/80 text-indigo-900 uppercase tracking-wide text-xs">
+                                <tr>
+                                    <th class="px-4 py-2 text-left font-semibold">Line Item</th>
+                                    <th class="px-4 py-2 text-center font-semibold">Qty</th>
+                                    <th class="px-4 py-2 text-right font-semibold">Unit Cost</th>
+                                    <th class="px-4 py-2 text-right font-semibold">Line Total</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-100">
+                                <?php foreach ($budget_breakdown as $line): ?>
+                                <tr class="hover:bg-indigo-50/40 transition-colors">
+                                    <td class="px-4 py-2 font-medium text-gray-800">
+                                        <?php echo htmlspecialchars($line['description']); ?>
+                                    </td>
+                                    <td class="px-4 py-2 text-center text-gray-600">
+                                        <?php echo (int)$line['qty']; ?>
+                                    </td>
+                                    <td class="px-4 py-2 text-right text-gray-600">
+                                        &#8369;<?php echo number_format($line['cost'], 2); ?>
+                                    </td>
+                                    <td class="px-4 py-2 text-right font-semibold text-gray-900">
+                                        &#8369;<?php echo number_format($line['total'], 2); ?>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                    <?php
+                        $declared_amount = isset($request['amount']) ? (float)$request['amount'] : 0;
+                        if (abs($budget_breakdown_total - $declared_amount) > 0.5):
+                    ?>
+                        <p class="text-xs text-amber-600 mt-3">
+                            Heads-up: the computed breakdown total differs from the declared amount of
+                            &#8369;<?php echo number_format($declared_amount, 2); ?>.
+                        </p>
+                    <?php endif; ?>
+                <?php else: ?>
+                    <div class="mt-4 text-sm text-gray-500 bg-gray-50 p-4 rounded-lg border border-dashed border-gray-300">
+                        <?php echo ($type_for_breakdown ?? '') === 'Budget Request'
+                            ? 'An itemized budget was not attached to this request.'
+                            : 'No detailed financial breakdown was provided for this submission.'; ?>
+                    </div>
+                <?php endif; ?>
             </div>
 
             <div class="bg-white p-6 rounded-xl shadow-lg border border-gray-200">

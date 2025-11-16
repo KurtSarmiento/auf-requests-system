@@ -13,9 +13,10 @@ require 'vendor/autoload.php';
  * @param string $toEmail   The recipient's email address.
  * @param string $subject   The email subject.
  * @param string $body      The HTML email body.
+ * @param array  $attachments Optional list of attachments. Each item may be a path string or an associative array with keys 'path' and optional 'name'.
  * @return bool             True on success, false on failure.
  */
-function sendNotificationEmail($toEmail, $subject, $body) {
+function sendNotificationEmail($toEmail, $subject, $body, array $attachments = []) {
     $mail = new PHPMailer(true);
 
     // --- YOUR SMTP SETTINGS (Unchanged) ---
@@ -38,6 +39,16 @@ function sendNotificationEmail($toEmail, $subject, $body) {
         $mail->Subject = $subject;
         $mail->Body    = $body;
         $mail->AltBody = strip_tags($body); // For non-HTML mail clients
+
+        // Attachments (optional)
+        foreach ($attachments as $attachment) {
+            if (is_string($attachment) && file_exists($attachment)) {
+                $mail->addAttachment($attachment);
+            } elseif (is_array($attachment) && isset($attachment['path']) && file_exists($attachment['path'])) {
+                $name = $attachment['name'] ?? basename($attachment['path']);
+                $mail->addAttachment($attachment['path'], $name);
+            }
+        }
 
         $mail->send();
         return true;

@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 // Initialize the session
 session_start();
  
@@ -171,158 +171,124 @@ if($_SERVER["REQUEST_METHOD"] == "POST"){
     mysqli_close($link);
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Register - AUF System</title>
+    <title>Register - AUFthorize</title>
+    <link rel="stylesheet" href="css/styles.css">
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        /* Custom font and base colors */
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #e5e7eb; /* Fallback */
-        }
-        
-        /* * CSS for the Moving Gradient Background (Matching Login Page)
-         */
-        .register-bg {
-            background: linear-gradient(-45deg, #1e3a8a, #172554, #4f46e5, #3730a3);
-            background-size: 400% 400%; /* Makes the gradient huge for smooth movement */
-            animation: gradient-shift 15s ease infinite; 
-        }
-        
-        @keyframes gradient-shift {
-            0% {
-                background-position: 0% 50%;
-            }
-            50% {
-                background-position: 100% 50%;
-            }
-            100% {
-                background-position: 0% 50%;
-            }
-        }
-    </style>
 </head>
-<body class="register-bg min-h-screen flex items-center justify-center p-4">
+<body class="login-shell">
+    <span class="floating-orb orb-one"></span>
+    <span class="floating-orb orb-two"></span>
+    <span class="floating-orb orb-three"></span>
 
-    <!-- Registration Container Card -->
-    <!-- Increased max-width for the form to look less cramped -->
-    <div class="w-full max-w-lg bg-white rounded-xl shadow-2xl overflow-hidden p-8 sm:p-10">
-        
-        <!-- Header Area -->
-        <div class="text-center mb-8">
-            <h1 class="text-3xl font-extrabold text-indigo-800">Register as Officer</h1>
-            <p class="text-gray-500 mt-1">Create your account to submit funding requests.</p>
-        </div>
-
-        <!-- Registration Form -->
-        <form action="<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>" method="post">
-
-            <!-- Full Name Field -->
-            <div class="mb-5">
-                <label for="full_name" class="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-                <input type="text" name="full_name" id="full_name" 
-                       class="w-full px-4 py-2 border rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 
-                              <?php echo (!empty($full_name_err)) ? 'border-red-500' : 'border-gray-300'; ?>" 
-                       value="<?php echo htmlspecialchars($full_name); ?>" 
-                       placeholder="e.g., Juan Dela Cruz">
-                <?php if (!empty($full_name_err)): ?>
-                    <p class="text-red-500 text-xs mt-1"><?php echo $full_name_err; ?></p>
-                <?php endif; ?>
+    <div class="register-frame">
+        <div class="login-grid">
+        <section class="login-card register-panel">
+            <div class="flex flex-col items-center text-center gap-4">
+                <div class="logo-slot">
+                    <strong>AUF</strong>
+                    <span>Reserve this slot for your official crest.</span>
+                </div>
+                <span class="pill-muted text-xs">Officer Enrollment</span>
+                <h1 class="text-2xl font-semibold text-white-900">Register to champion transparent AUF requests.</h1>
+                <p class="text-sm text-darkgray-500 max-w-md">
+                    One account gives you access to financial submissions, venue filings, status tracking, and exportable PDF packages.
+                </p>
+            </div>
+            <div class="divider"></div>
+            <div class="text-center mb-4">
+                <p class="uppercase tracking-[0.35em] text-xs text-white-500 mt-2">Create Account</p>
+                <p class="text-sm text-white-400 mt-2">Officer Registration &middot; Step 1 of 1</p>
             </div>
 
-            <!-- Organization Dropdown -->
-            <div class="mb-5">
-                <label for="org_id" class="block text-sm font-medium text-gray-700 mb-1">Affiliated Organization</label>
-                <select name="org_id" id="org_id" 
-                        class="w-full px-4 py-2 border rounded-lg appearance-none bg-white focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 
-                               <?php echo (!empty($org_id_err)) ? 'border-red-500' : 'border-gray-300'; ?>">
-                    <option value="" disabled selected>Select an organization</option>
-                    <?php foreach ($organizations as $org): ?>
-                        <option value="<?php echo htmlspecialchars($org['org_id']); ?>"
-                                <?php echo ($org_id == $org['org_id']) ? 'selected' : ''; ?>>
-                            <?php echo htmlspecialchars($org['org_name']); ?>
-                        </option>
-                    <?php endforeach; ?>
-                </select>
-                <?php if (!empty($org_id_err)): ?>
-                    <p class="text-red-500 text-xs mt-1"><?php echo $org_id_err; ?></p>
-                <?php endif; ?>
-            </div>
-
-            <!-- Username Field -->
-            <div class="mb-5">
-                <label for="username" class="block text-sm font-medium text-gray-700 mb-1">Username</label>
-                <input type="text" name="username" id="username" 
-                       class="w-full px-4 py-2 border rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 
-                              <?php echo (!empty($username_err)) ? 'border-red-500' : 'border-gray-300'; ?>" 
-                       value="<?php echo htmlspecialchars($username); ?>" 
-                       placeholder="Unique username for login">
-                <?php if (!empty($username_err)): ?>
-                    <p class="text-red-500 text-xs mt-1"><?php echo $username_err; ?></p>
-                <?php endif; ?>
-            </div>
-
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                <!-- Password Field -->
-                <div class="mb-5 sm:mb-0">
-                    <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Password</label>
-                    <input type="password" name="password" id="password" 
-                           class="w-full px-4 py-2 border rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 
-                                  <?php echo (!empty($password_err)) ? 'border-red-500' : 'border-gray-300'; ?>" 
-                           placeholder="••••••••">
-                    <?php if (!empty($password_err)): ?>
-                        <p class="text-red-500 text-xs mt-1"><?php echo $password_err; ?></p>
+            <form action="<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>" method="post" class="space-y-5">
+                <div>
+                    <label for="full_name" class="block text-sm font-medium text-white-700 mb-1">Full Name</label>
+                    <input type="text" name="full_name" id="full_name"
+                           class="input-modern w-full px-4 py-3 focus:outline-none <?php echo (!empty($full_name_err)) ? 'is-invalid' : ''; ?>"
+                           value="<?php echo htmlspecialchars($full_name); ?>"
+                           placeholder="Juan Dela Cruz" autocomplete="name">
+                    <?php if (!empty($full_name_err)): ?>
+                        <p class="invalid-feedback"><?php echo $full_name_err; ?></p>
                     <?php endif; ?>
                 </div>
 
-                <!-- Confirm Password Field -->
-                <div class="mb-6">
-                    <label for="confirm_password" class="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
-                    <input type="password" name="confirm_password" id="confirm_password" 
-                           class="w-full px-4 py-2 border rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 
-                                  <?php echo (!empty($confirm_password_err)) ? 'border-red-500' : 'border-gray-300'; ?>" 
-                           placeholder="••••••••">
-                    <?php if (!empty($confirm_password_err)): ?>
-                        <p class="text-red-500 text-xs mt-1"><?php echo $confirm_password_err; ?></p>
+                <div>
+                    <label for="org_id" class="block text-sm font-medium text-white-700 mb-1">Affiliated Organization</label>
+                    <select name="org_id" id="org_id"
+                            class="input-modern w-full px-4 py-3 bg-white/80 focus:outline-none <?php echo (!empty($org_id_err)) ? 'is-invalid' : ''; ?>">
+                        <option value="">-- Select Organization --</option>
+                        <?php foreach ($organizations as $org): ?>
+                            <option value="<?php echo $org['org_id']; ?>" <?php echo ($org_id == $org['org_id']) ? 'selected' : ''; ?>>
+                                <?php echo htmlspecialchars($org['org_name']); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <?php if (!empty($org_id_err)): ?>
+                        <p class="invalid-feedback"><?php echo $org_id_err; ?></p>
                     <?php endif; ?>
                 </div>
-            </div>
-            
-            <!-- === FIELD MOVED HERE === -->
-            <!-- Email Address Field -->
-            <div class="mb-6">
-                <label for="email" class="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
-                <input type="email" name="email" id="email" 
-                       class="w-full px-4 py-2 border rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 
-                              <?php echo (!empty($email_err)) ? 'border-red-500' : 'border-gray-300'; ?>" 
-                       value="<?php echo htmlspecialchars($email); ?>" 
-                       placeholder="e.g., juandelacruz@auf.edu.ph">
-                <?php if (!empty($email_err)): ?>
-                    <p class="text-red-500 text-xs mt-1"><?php echo $email_err; ?></p>
-                <?php endif; ?>
-            </div>
-            <!-- === END OF MOVED FIELD === -->
 
-            <!-- Submit Button -->
-            <button type="submit" 
-                    class="w-full flex justify-center py-2 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out mt-4">
-                Register Account
-            </button>
-        </form>
+                <div>
+                    <label for="email" class="block text-sm font-medium text-white-700 mb-1">AUF Email Address</label>
+                    <input type="email" name="email" id="email"
+                           class="input-modern w-full px-4 py-3 focus:outline-none <?php echo (!empty($email_err)) ? 'is-invalid' : ''; ?>"
+                           value="<?php echo htmlspecialchars($email); ?>"
+                           placeholder="name@auf.edu.ph" autocomplete="email">
+                    <?php if (!empty($email_err)): ?>
+                        <p class="invalid-feedback"><?php echo $email_err; ?></p>
+                    <?php endif; ?>
+                </div>
 
-        <!-- Footer Link -->
-        <div class="mt-6 text-center text-sm">
-            <p class="text-gray-600">Already have an account? 
-                <a href="login.php" class="font-medium text-indigo-600 hover:text-indigo-500">
-                    Sign in here
-                </a>.
-            </p>
+                <div>
+                    <label for="username" class="block text-sm font-medium text-white-700 mb-1">Username</label>
+                    <input type="text" name="username" id="username"
+                           class="input-modern w-full px-4 py-3 focus:outline-none <?php echo (!empty($username_err)) ? 'is-invalid' : ''; ?>"
+                           value="<?php echo htmlspecialchars($username); ?>"
+                           placeholder="auf.officer" autocomplete="username">
+                    <?php if (!empty($username_err)): ?>
+                        <p class="invalid-feedback"><?php echo $username_err; ?></p>
+                    <?php endif; ?>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="password" class="block text-sm font-medium text-white-700 mb-1">Password</label>
+                        <input type="password" name="password" id="password"
+                               class="input-modern w-full px-4 py-3 focus:outline-none <?php echo (!empty($password_err)) ? 'is-invalid' : ''; ?>"
+                               placeholder="At least 6 characters" autocomplete="new-password">
+                        <?php if (!empty($password_err)): ?>
+                            <p class="invalid-feedback"><?php echo $password_err; ?></p>
+                        <?php endif; ?>
+                    </div>
+                    <div>
+                        <label for="confirm_password" class="block text-sm font-medium text-white-700 mb-1">Confirm Password</label>
+                        <input type="password" name="confirm_password" id="confirm_password"
+                               class="input-modern w-full px-4 py-3 focus:outline-none <?php echo (!empty($confirm_password_err)) ? 'is-invalid' : ''; ?>"
+                               placeholder="Repeat password" autocomplete="new-password">
+                        <?php if (!empty($confirm_password_err)): ?>
+                            <p class="invalid-feedback"><?php echo $confirm_password_err; ?></p>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn-primary w-full py-3 text-base font-semibold">
+                    Create AUFthorize Account
+                </button>
+            </form>
+
+            <div class="mt-8 text-center text-sm text-white-500">
+                Already connected? 
+                <a href="login.php" class="font-semibold text-sky-600 hover:text-amber-500 transition">Sign in</a>
+            </div>
+        </section>
         </div>
     </div>
 </body>
 </html>
+
+

@@ -1,0 +1,70 @@
+        <section class="login-card" style="max-width:520px; width:100%; margin:0 auto; padding:clamp(1.75rem,4vw,3rem);">
+            <div class="logo-slot">
+                <strong>AUFthorize</strong>
+                <span>Reserve this slot for your official crest or system logo.</span>
+            </div>
+
+            <span class="pill-muted text-xs mb-4 inline-flex">Officer Enrollment</span>
+            <h1>Register to champion transparent AUF requests.</h1>
+            <p>One account gives you access to financial submissions, venue filings, status tracking, and exportable PDF packages.</p>
+
+            <div class="login-insights">
+                <div class="insight-card">
+                    <span>Submission Quality</span>
+                    <p>Structured forms and validation keep every AUFthorize request audit ready.</p>
+                </div>
+                <div class="insight-card">
+                    <span>Security</span>
+                    <p>Role-based dashboards ensure only your organization’s data appears.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="login-card">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="uppercase tracking-[0.3em] text-xs text-slate-500">Create Account</p>
+                    <h2 class="mt-2">Officer Registration</h2>
+                </div>
+                <span class="text-sm text-slate-400">Step 1 of 1</span>
+            </div>
+            <div class="divider"></div>
+
+            <form action="<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>" method="post" class="space-y-5">
+                <div>
+                    <label for="full_name" class="block text-sm font-medium text-slate-700 mb-1">Full Name</label>
+                    <input type="text" name="full_name" id="full_name"
+                           class="input-modern w-full px-4 py-3 focus:outline-none <?php echo (!empty($full_name_err)) ? 'is-invalid' : ''; ?>"
+                           value="<?php echo htmlspecialchars($full_name); ?>"
+                           placeholder="Juan Dela Cruz" autocomplete="name">
+                    <?php if (!empty($full_name_err)): ?>
+                        <p class="invalid-feedback"><?php echo $full_name_err; ?></p>
+                    <?php endif; ?>
+                </div>
+
+                <div>
+                    <label for="org_id" class="block text-sm font-medium text-slate-700 mb-1">Affiliated Organization</label>
+                    <select name="org_id" id="org_id"
+                            class="input-modern w-full px-4 py-3 bg-white/80 focus:outline-none <?php echo (!empty($org_id_err)) ? 'is-invalid' : ''; ?>">
+                        <option value="">-- Select Organization --</option>
+                        <?php foreach ($organizations as $org): ?>
+                            <option value="<?php echo $org['org_id']; ?>" <?php echo ($org_id == $org['org_id']) ? 'selected' : ''; ?>>
+                                <?php echo htmlspecialchars($org['org_name']); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <?php if (!empty($org_id_err)): ?>
+                        <p class="invalid-feedback"><?php echo $org_id_err; ?></p>
+                    <?php endif; ?>
+                </div>
+
+                <div>
+                    <label for="email" class="block text-sm font-medium text-slate-700 mb-1">AUF Email Address</label>
+                    <input type="email" name="email" id="email"
+                           class="input-modern w-full px-4 py-3 focus:outline-none <?php echo (!empty($email_err)) ? 'is-invalid' : ''; ?>"
+                           value="<?php echo htmlspecialchars($email); ?>"
+                           placeholder="name@auf.edu.ph" autocomplete="email">
+                    <?php if (!empty($email_err)): ?>
+                        <p class="invalid-feedback"><?php echo $email_err; ?></p>
+                    <?php endif; ?>
+                </div>

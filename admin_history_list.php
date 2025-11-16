@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 // Initialize the session and include template/config
 session_start();
 require_once "db_config.php";
@@ -39,7 +39,7 @@ switch ($role) {
     case 'AFO':
         $status_column = 'afo_status'; // Still needed for the WHERE clause
         $role_description = 'AFO Head';
-        // ✅ AFO LOGIC: Date column logic moved to SQL SELECT
+        // Gï¿½ï¿½ AFO LOGIC: Date column logic moved to SQL SELECT
         $date_column = 'afo_decision_date'; // Placeholder
         break;
     case 'Admin Services':
@@ -68,17 +68,7 @@ switch ($role) {
         $date_column = 'date_updated'; // Fallback only if role is somehow misconfigured
 }
 
-// ✅ ADDED: Helper function for status colors
-if (!function_exists('get_status_class')) {
-    function get_status_class($status) {
-        switch ($status) {
-            case 'Approved': return 'bg-teal-100 text-teal-800 border-teal-500'; // Standard Approved
-            case 'Rejected': return 'bg-red-100 text-red-800 border-red-500';
-            case 'Budget Available': return 'bg-emerald-100 text-emerald-800 border-emerald-500'; // AFO Approved
-            default: return 'bg-gray-100 text-gray-800 border-gray-500';
-        }
-    }
-}
+// Gï¿½ï¿½ ADDED: Helper function for status colors
 
 
 // 2. Search, Filter, and Pagination Setup
@@ -97,9 +87,9 @@ $org_filter_clause = '';
 $safe_search = "%" . $search_term . "%";
 
 // Base WHERE clause for Approved/Rejected status in the current admin's column
-// ✅ Use a dedicated param array for the filter
+// Gï¿½ï¿½ Use a dedicated param array for the filter
 $params_filter = [];
-// ✅ NEW: Need to track types for the filter
+// Gï¿½ï¿½ NEW: Need to track types for the filter
 $types_filter = ''; 
 
 // ===================================
@@ -193,7 +183,7 @@ $sql_parts = [];
 $funding_history_roles = ['Adviser', 'Dean', 'OSAFA', 'AFO'];
 if (in_array($role, $funding_history_roles)) {
     
-    // ✅ AFO LOGIC: Special WHERE clause and SELECT logic for AFO history
+    // Gï¿½ï¿½ AFO LOGIC: Special WHERE clause and SELECT logic for AFO history
     $funding_where_clause = "";
     $status_column_to_select = "r.$status_column"; // Default
     $date_column_to_select = "r.$date_column";     // Default
@@ -212,7 +202,7 @@ if (in_array($role, $funding_history_roles)) {
         $funding_where_clause = "WHERE r.$status_column IN ('Approved', 'Rejected')";
     }
     
-    // ✅ This SQL is correct, it selects r.type which we need for the fix
+    // Gï¿½ï¿½ This SQL is correct, it selects r.type which we need for the fix
     $sql_funding = "
         SELECT 
             r.request_id, 
@@ -382,203 +372,140 @@ mysqli_close($link);
 start_page("Completed Reviews History", $role, $full_name);
 ?>
 
-<h2 class="text-4xl font-extrabold text-gray-900 mb-2">
-    Completed Reviews
-</h2>
-<p class="text-xl text-gray-600 mb-6">
-    History of requests you, the <span class="font-bold text-blue-700"><?php echo htmlspecialchars($role_description); ?></span>, have actioned.
-</p>
+<div class="space-y-8 py-4">
+    <section class="page-hero">
+        <span class="hero-pill">History</span>
+        <h2 class="hero-title">Completed reviews for <?php echo htmlspecialchars($role_description); ?>.</h2>
+        <p class="hero-subtext">Search by title or filter by decision to reference previous approvals and returns.</p>
+    </section>
 
-<!-- Search and Filter Form -->
-<div class="bg-gray-50 p-6 rounded-xl shadow-inner mb-6 border border-blue-100">
-    <form method="GET" action="admin_history_list.php" class="flex flex-col md:flex-row gap-4 items-end">
-        
-        <!-- Search Field -->
-        <div class="flex-grow w-full md:w-auto">
-            <label for="search" class="block text-sm font-medium text-gray-700">Search by Title</label>
-            <input type="text" name="search" id="search" value="<?php echo htmlspecialchars($search_term); ?>" 
-                   placeholder="Enter keyword" 
-                   class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border">
-        </div>
-
-        <!-- Status Filter -->
-        <div class="w-full md:w-48">
-            <label for="status" class="block text-sm font-medium text-gray-700">Filter by Decision</label>
-            <select id="status" name="status" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 border bg-white">
-                <option value="All" <?php if ($filter_status === 'All') echo 'selected'; ?>>All Decisions</option>
-                <option value="Approved" <?php if ($filter_status === 'Approved') echo 'selected'; ?>>
-                    <?php echo ($role === 'AFO') ? 'Budget Available/Approved' : 'Approved'; // ✅ AFO LOGIC: Change label ?>
-                </option>
-                <option value="Rejected" <?php if ($filter_status === 'Rejected') echo 'selected'; ?>>Rejected</option>
-            </select>
-        </div>
-        
-        <!-- Submit Button -->
-        <button type="submit" class="w-full md:w-auto px-4 py-2 bg-blue-600 text-white font-semibold rounded-md shadow-md hover:bg-blue-700 transition duration-150">
-            Apply Filters
-        </button>
-        
-        <!-- Clear Button -->
-        <a href="admin_history_list.php" class="w-full md:w-auto px-4 py-2 bg-gray-300 text-gray-700 font-semibold rounded-md shadow-md hover:bg-gray-400 text-center transition duration-150">
-            Clear
-        </a>
-
-    </form>
-</div>
-
-<!-- Results Table -->
-<div class="bg-white p-6 rounded-xl shadow-xl overflow-x-auto">
-    <div class="mb-4 text-sm text-gray-600">
-        Showing <?php echo min($records_per_page, max(0, $total_records - ($page - 1) * $records_per_page)); ?> of <?php echo $total_records; ?> records.
+    <div class="subtle-card">
+        <form method="GET" action="admin_history_list.php" class="grid gap-4 md:grid-cols-3">
+            <div>
+                <label for="search" class="text-xs uppercase tracking-[0.4em] text-slate-500">Search</label>
+                <input type="text" name="search" id="search" value="<?php echo htmlspecialchars($search_term); ?>"
+                       placeholder="Enter keyword"
+                       class="input-modern w-full px-4 py-3 mt-2">
+            </div>
+            <div>
+                <label for="status" class="text-xs uppercase tracking-[0.4em] text-slate-500">Decision</label>
+                <select id="status" name="status" class="input-modern w-full px-4 py-3 mt-2 bg-white/70">
+                    <option value="All" <?php if ($filter_status === 'All') echo 'selected'; ?>>All</option>
+                    <option value="Approved" <?php if ($filter_status === 'Approved') echo 'selected'; ?>>
+                        <?php echo ($role === 'AFO') ? 'Budget Available / Approved' : 'Approved'; ?>
+                    </option>
+                    <option value="Rejected" <?php if ($filter_status === 'Rejected') echo 'selected'; ?>>Rejected</option>
+                </select>
+            </div>
+            <div class="flex items-end">
+                <button type="submit" class="btn-primary w-full">Apply filters</button>
+            </div>
+        </form>
     </div>
 
     <?php if (empty($requests)): ?>
-        <div class="p-8 text-center text-gray-500 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
-            <p class="font-semibold text-lg">No Completed Reviews Found</p>
-            <p class="text-sm mt-1">Adjust your search or filter criteria, or perhaps you haven't reviewed any requests yet.</p>
+        <div class="subtle-card">
+            <p class="hero-subtext">No records yet.</p>
+            <p class="text-sm text-slate-500 mt-1">Completed reviews will appear here after you approve or return a request.</p>
         </div>
     <?php else: ?>
-        <table class="min-w-full divide-y divide-blue-200">
-            <thead class="bg-blue-50">
-                <tr>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-blue-600 uppercase tracking-wider">ID / Type</th>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-blue-600 uppercase tracking-wider">Officer / Organization</th>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-blue-600 uppercase tracking-wider">Title</th>
-                    <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-blue-600 uppercase tracking-wider">Amount (PHP)</th>
-                    <th scope="col" class="px-6 py-3 text-center text-xs font-medium text-blue-600 uppercase tracking-wider">My Decision</th>
-                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-blue-600 uppercase tracking-wider">Decision Date</th>
-                    <th scope="col" class="px-6 py-3"></th>
-                </tr>
-            </thead>
-            <tbody class="bg-white divide-y divide-gray-100">
-                <?php foreach ($requests as $request): 
-                
-                    // ✅ *** START: AFO LIQUIDATION FIX ***
-                    // We check if the role is AFO and the type is 'Liquidation Report'
-                    // to change the display text from 'Budget Available' to 'Approved'.
-                    $display_decision = $request['my_decision'];
-                    
-                    if ($role === 'AFO' && 
-                        $request['my_decision'] === 'Budget Available' && 
-                        isset($request['type']) && $request['type'] === 'Liquidation Report') {
-                        
-                        $display_decision = 'Approved';
-                    }
-                    // ✅ *** END: AFO LIQUIDATION FIX ***
-                    
-                    // Use the new $display_decision variable for the color
-                    $decision_color = get_status_class($display_decision);
-                    
-                    $amount_display = is_numeric($request['amount']) ? '₱' . number_format($request['amount'], 2) : 'N/A';
-                    
-                    // Determine correct detail link
-                    $request_link = 'request_details.php?id='; // Default to funding
-                    if ($request['request_type_label'] === 'Venue') {
-                        $request_link = 'venue_request_details.php?id=';
-                    }
-                    
-                    // Format decision date, handle NULLs
-                    $decision_date_display = 'N/A';
-                    if (!empty($request['decision_date'])) {
-                        // Attempt to format the date
-                        $timestamp = strtotime($request['decision_date']);
-                        if ($timestamp !== false && $timestamp > 0) { // Check for valid timestamp
-                            $decision_date_display = date('M d, Y', $timestamp);
-                        } else {
-                            // If strtotime fails (e.g., '0000-00-00'), display raw or N/A
-                             $decision_date_display = 'Invalid Date';
+        <div class="table-shell overflow-x-auto">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Officer</th>
+                        <th>Request</th>
+                        <th>Amount</th>
+                        <th>Decision</th>
+                        <th>Date</th>
+                        <th class="text-right">Details</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($requests as $request):
+                        $display_decision = $request['my_decision'];
+                        if ($role === 'AFO' && $display_decision === 'Budget Available' && $request['request_type_label'] === 'Liquidation Report') {
+                            $display_decision = 'Approved';
                         }
-                    } 
-                ?>
-                <tr class="hover:bg-blue-50 transition duration-100">
-                    <td class="px-6 py-4 whitespace-nowrap">
-                        <div class="text-sm font-medium text-gray-900">#<?php echo htmlspecialchars($request['request_id']); ?></div>
-                        <div class="text-xs text-gray-500 mt-0.5"><?php echo htmlspecialchars($request['type']); ?></div>
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap">
-                        <div class="text-sm font-medium text-gray-900"><?php echo htmlspecialchars($request['officer_name']); ?></div>
-                        <div class="text-xs text-gray-500 mt-0.5"><?php echo htmlspecialchars($request['org_name']); ?></div>
-                    </td>
-                    <td class="px-6 py-4 text-sm text-gray-500 max-w-xs truncate" title="<?php echo htmlspecialchars($request['title']); ?>">
-                        <?php echo htmlspecialchars($request['title']); ?>
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-semibold text-gray-700">
-                        <?php echo $amount_display; ?>
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-center">
-                        <span class="inline-flex items-center px-3 py-0.5 rounded-full text-xs font-medium border-2 <?php echo $decision_color; ?>">
-                            <?php echo htmlspecialchars($display_decision); // ✅ Use the new variable ?>
-                        </span>
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        <?php echo $decision_date_display; ?>
-                    </td>
-                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <a href="<?php echo $request_link . $request['request_id']; ?>" 
-                           class="text-blue-600 hover:text-blue-900 font-semibold transition duration-150">View Details</a>
-                    </td>
-                </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
+                        $decision_class = 'status-chip pending';
+                        if ($display_decision === 'Rejected') {
+                            $decision_class = 'status-chip rejected';
+                        } elseif (in_array($display_decision, ['Approved', 'Budget Available'])) {
+                            $decision_class = 'status-chip approved';
+                        }
+                        $amount_display = is_numeric($request['amount']) ? '&#8369;' . number_format($request['amount'], 2) : 'N/A';
+                        $request_link = ($request['request_type_label'] === 'Venue' ? 'venue_request_details.php?id=' : 'request_details.php?id=') . $request['request_id'];
+                        $decision_date_display = 'N/A';
+                        if (!empty($request['decision_date'])) {
+                            $timestamp = strtotime($request['decision_date']);
+                            if ($timestamp !== false && $timestamp > 0) {
+                                $decision_date_display = date('M d, Y', $timestamp);
+                            }
+                        }
+                    ?>
+                    <tr>
+                        <td>
+                            <div class="text-sm font-semibold text-slate-900">#<?php echo htmlspecialchars($request['request_id']); ?></div>
+                            <div class="text-xs text-slate-500 mt-0.5"><?php echo htmlspecialchars($request['type']); ?></div>
+                        </td>
+                        <td>
+                            <div class="text-sm font-semibold text-slate-900"><?php echo htmlspecialchars($request['officer_name']); ?></div>
+                            <div class="text-xs text-slate-500 mt-0.5"><?php echo htmlspecialchars($request['org_name']); ?></div>
+                        </td>
+                        <td>
+                            <p class="text-sm text-slate-700 max-w-xs" title="<?php echo htmlspecialchars($request['title']); ?>"><?php echo htmlspecialchars($request['title']); ?></p>
+                        </td>
+                        <td>
+                            <p class="text-sm font-semibold text-slate-900 text-right"><?php echo $amount_display; ?></p>
+                        </td>
+                        <td class="text-center">
+                            <span class="<?php echo $decision_class; ?>"><?php echo htmlspecialchars($display_decision); ?></span>
+                        </td>
+                        <td>
+                            <p class="text-sm text-slate-600"><?php echo $decision_date_display; ?></p>
+                        </td>
+                        <td class="text-right">
+                            <a href="<?php echo $request_link; ?>" class="detail-link">View</a>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
     <?php endif; ?>
-</div>
 
-<!-- Pagination Controls -->
-<div class="mt-6 flex justify-between items-center">
-    <?php 
-        // Rebuild query params excluding page
-        $query_params_array = [];
-        if (!empty($search_term)) $query_params_array['search'] = $search_term;
-        if ($filter_status !== 'All') $query_params_array['status'] = $filter_status;
-        $query_params = http_build_query($query_params_array);
-        if (!empty($query_params)) $query_params = '&' . $query_params; // Add leading ampersand if params exist
-    ?>
-    <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
-        <!-- Previous Page Button -->
-        <?php if ($page > 1): ?>
-            <a href="?page=<?php echo $page - 1; ?><?php echo $query_params; ?>" class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
-                <span class="sr-only">Previous</span>
-                <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                    <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd" />
-                </svg>
-            </a>
-        <?php else: ?>
-             <span class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-gray-100 text-sm font-medium text-gray-400 cursor-not-allowed">
-                <span class="sr-only">Previous</span>
-                <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                    <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd" />
-                </svg>
-             </span>
-        <?php endif; ?>
-
-        <!-- Page Numbers (Simplified) -->
-        <span class="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-blue-600 text-sm font-semibold text-white">
-            Page <?php echo $page; ?> of <?php echo max(1, $total_pages); // Ensure at least 1 page ?>
-        </span>
-
-        <!-- Next Page Button -->
-        <?php if ($page < $total_pages): ?>
-            <a href="?page=<?php echo $page + 1; ?><?php echo $query_params; ?>" class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
-                <span class="sr-only">Next</span>
-                <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                    <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
-                </svg>
-            </a>
-        <?php else: ?>
-             <span class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-gray-100 text-sm font-medium text-gray-400 cursor-not-allowed">
-                <span class="sr-only">Next</span>
-                <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                    <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
-                </svg>
-             </span>
-        <?php endif; ?>
-    </nav>
-    <div class="text-sm text-gray-600">
-        Total Results: <span class="font-semibold text-gray-900"><?php echo $total_records; ?></span>
+    <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <?php 
+            $query_params_array = [];
+            if (!empty($search_term)) $query_params_array['search'] = $search_term;
+            if ($filter_status !== 'All') $query_params_array['status'] = $filter_status;
+            $query_params = http_build_query($query_params_array);
+            if (!empty($query_params)) $query_params = '&' . $query_params;
+        ?>
+        <div class="flex items-center gap-2">
+            <?php if ($page > 1): ?>
+                <a href="?page=<?php echo $page - 1; ?><?php echo $query_params; ?>" class="filter-pill">Prev</a>
+            <?php else: ?>
+                <span class="filter-pill" style="opacity:0.5;">Prev</span>
+            <?php endif; ?>
+            <span class="hero-pill">Page <?php echo $page; ?> of <?php echo max(1, $total_pages); ?></span>
+            <?php if ($page < $total_pages): ?>
+                <a href="?page=<?php echo $page + 1; ?><?php echo $query_params; ?>" class="filter-pill">Next</a>
+            <?php else: ?>
+                <span class="filter-pill" style="opacity:0.5;">Next</span>
+            <?php endif; ?>
+        </div>
+        <p class="text-sm text-slate-600">Total Results: <span class="font-semibold text-slate-900"><?php echo $total_records; ?></span></p>
     </div>
 </div>
 
 <?php
 end_page();
+?><?php
+end_page();
 ?>
+
+
+
+

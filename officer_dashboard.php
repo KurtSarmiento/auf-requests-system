@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 // Initialize the session and include template/config
 session_start();
 require_once "db_config.php";
@@ -64,60 +64,56 @@ if ($stmt_counts = mysqli_prepare($link, $sql_counts)) {
 start_page("Officer Dashboard", $role, $full_name);
 ?>
 
-<h2 class="text-5xl font-extrabold text-gray-900 mb-2">
-    Welcome, <?php echo htmlspecialchars(explode(' ', $full_name)[0]); ?>!
-</h2>
-<p class="text-xl text-gray-600 mb-10">
-    Dashboard for the <span class="font-bold text-blue-700"><?php echo htmlspecialchars($organization_name); ?></span> Officer.
-</p>
+<div class="space-y-8">
+    <section class="page-hero">
+        <div class="grid gap-10 lg:grid-cols-2 lg:items-center">
+            <div>
+                <span class="hero-pill">Officer Workspace</span>
+                <h2 class="hero-title">
+                    Welcome, <?php echo htmlspecialchars(explode(' ', $full_name)[0]); ?>.
+                </h2>
+                <p class="hero-subtext">
+                    Launch new AUFthorize requests or monitor every venue, reimbursement, and liquidation
+                    filing from a clean, glassy control board.
+                </p>
+                <div class="hero-actions">
+                    <a href="request_select.php" class="btn-primary">Create Request</a>
+                    <a href="request_list.php" class="detail-link">Track submissions</a>
+                </div>
+            </div>
+        </div>
+    </section>
 
-<div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-12">
-    <a href="request_select.php" class="bg-blue-600 hover:bg-blue-700 text-white p-8 rounded-xl shadow-2xl transition duration-300 transform hover:scale-[1.03] flex flex-col justify-center">
-        <h3 class="text-3xl font-bold mb-1">Submit New Request</h3>
-        <p class="text-sm opacity-90 font-light">Choose from Budget, Liquidation, Reimbursement, or Venue forms.</p>
-    </a>
-    <a href="request_list.php" class="bg-indigo-600 hover:bg-indigo-700 text-white p-8 rounded-xl shadow-2xl transition duration-300 transform hover:scale-[1.03] flex flex-col justify-center">
-        <h3 class="text-3xl font-bold mb-1">View My Submissions</h3>
-        <p class="text-sm opacity-90 font-light">Track statuses and progress of all requests.</p>
-    </a>
-    <div class="bg-sky-600 text-white p-8 rounded-xl shadow-xl flex flex-col justify-center">
-        <h3 class="text-xl font-semibold mb-1 opacity-80">Your Organization:</h3>
-        <p class="text-3xl font-extrabold"><?php echo htmlspecialchars($organization_name); ?></p>
-        <p class="text-sm opacity-90 mt-1">Role: <?php echo htmlspecialchars($role); ?></p>
-    </div>
+    <section>
+        <div class="stat-grid space">
+            <div class="stat-card stat-card--accent">
+                <p class="stat-card__label">Total submissions</p>
+                <p class="stat-card__value"><?php echo $request_count; ?></p>
+                <p class="stat-card__meta">All requests filed under your account</p>
+            </div>
+            <div class="stat-card">
+                <p class="stat-card__label">Approved</p>
+                <p class="stat-card__value"><?php echo $approved_count; ?></p>
+                <p class="stat-card__meta">Ready for execution/liquidation</p>
+            </div>
+            <div class="stat-card">
+                <p class="stat-card__label">In review</p>
+                <p class="stat-card__value"><?php echo $pending_count; ?></p>
+                <p class="stat-card__meta">Currently in routing across offices</p>
+            </div>
+            <div class="stat-card">
+                <p class="stat-card__label">Returned</p>
+                <p class="stat-card__value"><?php echo $rejected_count; ?></p>
+                <p class="stat-card__meta">Requires revision or follow-up</p>
+            </div>
+        </div>
+    </section>
 </div>
 
-<h3 class="text-2xl font-semibold text-gray-800 mb-4">Request Summary</h3>
-<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-
-    <div class="bg-white p-6 rounded-xl shadow-lg border-2 border-gray-100 flex flex-col items-start">
-        <p class="text-sm font-semibold text-gray-600 uppercase tracking-wider">Total Submissions</p>
-        <p class="text-5xl font-extrabold text-gray-700 mt-2"><?php echo $request_count; ?></p>
-        <p class="text-xs text-gray-500 mt-2">All-time requests submitted</p>
-    </div>
-
-    <div class="bg-white p-6 rounded-xl shadow-lg border-2 border-blue-400 flex flex-col items-start">
-        <p class="text-sm font-semibold text-blue-600 uppercase tracking-wider">Final Approved</p>
-        <p class="text-5xl font-extrabold text-blue-700 mt-2"><?php echo $approved_count; ?></p>
-        <p class="text-xs text-gray-500 mt-2">Ready for execution/liquidation</p>
-    </div>
-
-    <div class="bg-white p-6 rounded-xl shadow-lg border-2 border-teal-400 flex flex-col items-start">
-        <p class="text-sm font-semibold text-teal-600 uppercase tracking-wider">Awaiting Approval</p>
-        <p class="text-5xl font-extrabold text-teal-700 mt-2"><?php echo $pending_count; ?></p>
-        <p class="text-xs text-gray-500 mt-2">Currently in the pipeline</p>
-    </div>
-    
-    <div class="bg-white p-6 rounded-xl shadow-lg border-2 border-red-400 flex flex-col items-start">
-        <p class="text-sm font-semibold text-red-600 uppercase tracking-wider">Total Rejected</p>
-        <p class="text-5xl font-extrabold text-red-700 mt-2"><?php echo $rejected_count; ?></p>
-        <p class="text-xs text-gray-500 mt-2">Requires review and resubmission</p>
-    </div>
-</div>
-
-<?php 
+<?php
 // Close the database connection
 mysqli_close($link);
 // End the page using the template function
 end_page(); 
 ?>
+

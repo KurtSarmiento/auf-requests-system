@@ -106,6 +106,49 @@ if (isset($link) && $link instanceof mysqli) {
    mysqli_close($link);
 }
 
+$budget_breakdown = [];
+$budget_breakdown_total = 0;
+$breakdown_heading = 'Budget Breakdown';
+$type_for_breakdown = '';
+
+if ($request) {
+    $type_for_breakdown = $request['type'] ?? '';
+    if ($type_for_breakdown === 'Liquidation Report') {
+        $breakdown_heading = 'Expense Breakdown';
+    } elseif ($type_for_breakdown === 'Reimbursement') {
+        $breakdown_heading = 'Reimbursement Breakdown';
+    }
+
+    if (!empty($request['budget_details_json'])) {
+        $decoded_breakdown = json_decode($request['budget_details_json'], true);
+
+        if (is_array($decoded_breakdown)) {
+            foreach ($decoded_breakdown as $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+
+                $line_description = trim((string)($item['description'] ?? ''));
+                $line_qty = isset($item['qty']) ? (int)$item['qty'] : 0;
+                $line_cost = isset($item['cost']) ? (float)$item['cost'] : 0.0;
+
+                if ($line_description === '' && $line_qty === 0 && $line_cost === 0.0) {
+                    continue;
+                }
+
+                $line_total = $line_qty * $line_cost;
+                $budget_breakdown_total += $line_total;
+                $budget_breakdown[] = [
+                    'description' => $line_description !== '' ? $line_description : 'Unspecified line item',
+                    'qty' => $line_qty,
+                    'cost' => $line_cost,
+                    'total' => $line_total
+                ];
+            }
+        }
+    }
+}
+
 
 // Start the page
 start_page("Request Details", $_SESSION["role"], $_SESSION["full_name"]);
@@ -160,14 +203,49 @@ function info_box($title, $value, $extra_class = '') {
              </div>
         </div>
     <?php elseif ($request): ?>
-         <div class="mb-6">
-             <?php // Determine correct back link based on who is viewing
-                 $back_link = $is_officer ? 'request_list.php' : 'admin_history_list.php'; // Admins go to history usually
-                 $back_text = $is_officer ? '← Back to My Requests' : '← Back to History';
-             ?>
-            <a href="<?php echo $back_link; ?>" class="text-gray-600 hover:text-gray-900 font-medium">
-               <?php echo $back_text; ?>
+        <?php
+            // Determine back link and pdf script details once for the page header
+            $back_link = $is_officer ? 'request_list.php' : 'admin_history_list.php';
+            $back_text = $is_officer ? 'Back to My Requests' : 'Back to History';
+
+            $pdf_script = '';
+            $button_text = 'Export to PDF';
+
+            if (($request['type'] ?? '') === 'Budget Request') {
+                $pdf_script = 'generate_budget_pdf.php';
+                $button_text = 'Export Budget Request (PDF)';
+            } else if (($request['type'] ?? '') === 'Liquidation Report') {
+                $pdf_script = 'generate_liquidation_pdf.php';
+                $button_text = 'Export Liquidation Report (PDF)';
+            } else if (($request['type'] ?? '') === 'Reimbursement') {
+                $pdf_script = 'generate_reimbursement_pdf.php';
+                $button_text = 'Export Reimbursement Request (PDF)';
+            } else {
+                $pdf_script = 'generate_venue_pdf.php';
+                $button_text = 'Export Venue/Equipment Request (PDF)';
+            }
+        ?>
+
+        <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+            <a href="<?php echo $back_link; ?>"
+               class="inline-flex items-center gap-2 text-sm font-medium text-gray-700 bg-gray-100 px-4 py-2 rounded-full hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400">
+                <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                </svg>
+                <?php echo $back_text; ?>
             </a>
+
+            <div class="flex items-center gap-3">
+                <span class="text-sm text-gray-500">Request ID: <span class="font-semibold text-gray-700">#<?php echo (int)$request['request_id']; ?></span></span>
+                <a href="<?php echo htmlspecialchars($pdf_script); ?>?id=<?php echo (int)$request['request_id']; ?>"
+                   target="_blank"
+                   class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-full shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
+                    <svg class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M5 4.5a.5.5 0 01.5-.5h9a.5.5 0 010 1H10a.5.5 0 000 1h4.5a.5.5 0 01.5.5v10a.5.5 0 01-.5.5h-9a.5.5 0 01-.5-.5v-10zm.5 10a.5.5 0 000 1h9a.5.5 0 000-1h-9zM10 3a1 1 0 00-1 1v2a1 1 0 102 0V4a1 1 0 00-1-1zM5 8a.5.5 0 01.5-.5h9a.5.5 0 010 1H5.5a.5.5 0 01-.5-.5z" clip-rule="evenodd" />
+                    </svg>
+                    <?php echo $button_text; ?>
+                </a>
+            </div>
         </div>
 
         <div class="bg-white p-6 rounded-xl shadow-lg border border-gray-200 mb-6">
@@ -187,36 +265,6 @@ function info_box($title, $value, $extra_class = '') {
                 </div>
             </div>
         </div>
-
-        <div class="mt-4 pt-4 border-t border-gray-100 flex justify-end">
-                <?php 
-                    // Determine which PDF link to use based on the request type
-                    $pdf_script = '';
-                    $button_text = 'Export to PDF';
-
-                    if (($request['type'] ?? '') === 'Budget Request') {
-                        $pdf_script = 'generate_budget_pdf.php';
-                        $button_text = 'Export Budget Request (PDF)';
-                    } else if (($request['type'] ?? '') === 'Liquidation Report') {
-                        // Assuming the previous PDF script was named generate_venue_pdf.php
-                        $pdf_script = 'generate_liquidation_pdf.php'; 
-                        $button_text = 'Export Liquidation Report (PDF)';
-                    }
-                    else {
-                        // Assuming the previous PDF script was named generate_venue_pdf.php
-                        $pdf_script = 'generate_venue_pdf.php'; 
-                        $button_text = 'Export Venue/Equipment Request (PDF)';
-                    }
-                ?>
-                <a href="<?php echo htmlspecialchars($pdf_script); ?>?id=<?php echo (int)$request['request_id']; ?>" 
-                   target="_blank" 
-                   class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
-                    <svg class="-ml-1 mr-2 h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                        <path fill-rule="evenodd" d="M5 4.5a.5.5 0 01.5-.5h9a.5.5 0 010 1H10a.5.5 0 000 1h4.5a.5.5 0 01.5.5v10a.5.5 0 01-.5.5h-9a.5.5 0 01-.5-.5v-10zm.5 10a.5.5 0 000 1h9a.5.5 0 000-1h-9zM10 3a1 1 0 00-1 1v2a1 1 0 102 0V4a1 1 0 00-1-1zM5 8a.5.5 0 01.5-.5h9a.5.5 0 010 1H5.5a.5.5 0 01-.5-.5z" clip-rule="evenodd" />
-                    </svg>
-                    <?php echo $button_text; ?>
-                </a>
-            </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
@@ -378,6 +426,9 @@ function info_box($title, $value, $extra_class = '') {
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <?php info_box('Date Submitted', date('M d, Y h:i A', strtotime($request['date_submitted']))); ?>
                     <?php info_box('Submitted By', $request['full_name']); ?>
+                    <?php if (!empty($request['activity_date'])): ?>
+                        <?php info_box('Activity Date', date('M d, Y', strtotime($request['activity_date']))); ?>
+                    <?php endif; ?>
                 </div>
 
                 <div class="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
@@ -385,6 +436,65 @@ function info_box($title, $value, $extra_class = '') {
                     <div class="prose max-w-none text-gray-700">
                         <?php echo !empty($request['description']) ? nl2br(htmlspecialchars($request['description'])) : '<p><i>No description provided.</i></p>'; ?>
                     </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
+                    <div class="flex flex-wrap items-center justify-between gap-4">
+                        <h3 class="text-xl font-semibold text-gray-800"><?php echo htmlspecialchars($breakdown_heading); ?></h3>
+                        <?php if ($budget_breakdown_total > 0): ?>
+                            <span class="px-3 py-1 rounded-full text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200">
+                                Computed Total: &#8369;<?php echo number_format($budget_breakdown_total, 2); ?>
+                            </span>
+                        <?php endif; ?>
+                    </div>
+
+                    <?php if (!empty($budget_breakdown)): ?>
+                        <div class="overflow-x-auto mt-4">
+                            <table class="min-w-full divide-y divide-gray-200 text-sm">
+                                <thead class="bg-indigo-50/80 text-indigo-900 uppercase tracking-wide text-xs">
+                                    <tr>
+                                        <th class="px-4 py-2 text-left font-semibold">Line Item</th>
+                                        <th class="px-4 py-2 text-center font-semibold">Qty</th>
+                                        <th class="px-4 py-2 text-right font-semibold">Unit Cost</th>
+                                        <th class="px-4 py-2 text-right font-semibold">Line Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-100">
+                                    <?php foreach ($budget_breakdown as $line): ?>
+                                    <tr class="hover:bg-indigo-50/40 transition-colors">
+                                        <td class="px-4 py-2 font-medium text-gray-800">
+                                            <?php echo htmlspecialchars($line['description']); ?>
+                                        </td>
+                                        <td class="px-4 py-2 text-center text-gray-600">
+                                            <?php echo (int)$line['qty']; ?>
+                                        </td>
+                                        <td class="px-4 py-2 text-right text-gray-600">
+                                            &#8369;<?php echo number_format($line['cost'], 2); ?>
+                                        </td>
+                                        <td class="px-4 py-2 text-right font-semibold text-gray-900">
+                                            &#8369;<?php echo number_format($line['total'], 2); ?>
+                                        </td>
+                                    </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                        <?php
+                            $declared_amount = isset($request['amount']) ? (float)$request['amount'] : 0;
+                            if (abs($budget_breakdown_total - $declared_amount) > 0.5):
+                        ?>
+                            <p class="text-xs text-amber-600 mt-3">
+                                Heads-up: the computed breakdown total differs from the declared amount of
+                                &#8369;<?php echo number_format($declared_amount, 2); ?>.
+                            </p>
+                        <?php endif; ?>
+                    <?php else: ?>
+                        <div class="mt-4 text-sm text-gray-500 bg-gray-50 p-4 rounded-lg border border-dashed border-gray-300">
+                            <?php echo $type_for_breakdown === 'Budget Request'
+                                ? 'An itemized budget was not attached to this request.'
+                                : 'No detailed financial breakdown was provided for this submission.'; ?>
+                        </div>
+                    <?php endif; ?>
                 </div>
 
                 <div class="bg-white p-6 rounded-xl shadow-lg border border-gray-200">

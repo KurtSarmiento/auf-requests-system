@@ -98,84 +98,105 @@ if($_SERVER["REQUEST_METHOD"] == "POST"){
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - AUF System</title>
+    <title>AUFthorize Login</title>
     <!-- Load Tailwind CSS from CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Link to the external stylesheet -->
     <link rel="stylesheet" href="css/styles.css">
 </head>
-<body class="login-bg min-h-screen flex items-center justify-center p-4">
+<body class="login-bg min-h-screen flex items-center justify-center px-4 py-10 relative overflow-hidden">
+    <span class="floating-bubble bubble-lg" aria-hidden="true"></span>
+    <span class="floating-bubble bubble-sm" aria-hidden="true"></span>
 
-    <!-- Login Container Card -->
-    <!-- The glass-card class applies the blur and transparency defined in style.css -->
-    <div class="glass-card w-full max-w-md rounded-xl shadow-2xl overflow-hidden p-8 sm:p-10">
-        
-        <!-- Header / Logo Area -->
-        <div class="text-center mb-8">
-            <!-- Logo Placeholder -->
-            <!-- You can replace the 'placeholder.png' with your actual logo path -->
-            <img src="https://placehold.co/128x64/2563EB/ffffff?text=LOGO" onerror="this.src='https://placehold.co/128x64/2563EB/ffffff?text=LOGO'" alt="System Logo" class="mx-auto h-16 w-auto mb-4 rounded-lg" id="app-logo">
-            
-            <h1 class="text-3xl font-extrabold text-white drop-shadow-lg">AUF Request System</h1>
-            <p class="text-indigo-200 mt-1">Sign in to your account</p>
-        </div>
+    <main class="relative z-10 w-full max-w-5xl">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+            <section class="glass-panel p-8 lg:p-10 text-white flex flex-col justify-between">
+                <div>
+                    <div class="ios-pill mb-6">
+                        <span class="inline-block w-2.5 h-2.5 rounded-full bg-white/80"></span>
+                        Developed by Pinacate & Sarmiento
+                    </div>
+                    <h1 class="text-4xl font-semibold leading-tight tracking-tight">
+                        A unified, transparent command center for every AUF request.
+                    </h1>
+                    <p class="mt-20 text-white/80 text-base">
+                        Designed to streamline the operational backbone of the AUF College Student Council, AUFthorize provides a unified digital platform for managing venue requests, funding workflows, and approval chains.
+                    </p>
+                </div>
+                <div class="mt-6">
+                    <p class="text-white/70 text-sm leading-relaxed">
+                        AUFthorize keeps officers, admins, and organizations aligned with transparent statuses and glass-clear insights.
+                    </p>
+                </div>
+            </section>
 
-        <?php 
-        // Display login error if set
-        if(!empty($login_err)){
-            echo '<div class="bg-red-500/30 border border-red-400 text-white px-4 py-3 rounded-lg mb-4 text-sm backdrop-blur-sm" role="alert">' . $login_err . '</div>';
-        }      
-        ?>
+            <section class="glass-card p-8 lg:p-10 text-slate-900/90 flex flex-col gap-8">
+                <div class="flex flex-col items-center text-center gap-4">
+                    <!-- Logo placeholder block. Replace with the actual AUFthorize branding when available. -->
+                    <div class="logo-placeholder" role="img" aria-label="AUFthorize logo placeholder">
+                        <span>AUF</span>
+                    </div>
+                    <div>
+                        <p class="logo-caption mb-2">AUFthorize</p>
+                        <h2 class="text-2xl font-semibold tracking-tight">Welcome back</h2>
+                        <p class="text-white-500 text-sm">Sign in with your campus credentials to continue.</p>
+                    </div>
+                </div>
 
-        <!-- Login Form -->
-        <form action="<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>" method="post">
-            
-            <!-- Username Field -->
-            <div class="mb-5">
-                <label for="username" class="block text-sm font-medium text-white mb-1 drop-shadow">Username</label>
-                <!-- glass-input class for transparency and clean look -->
-                <input type="text" name="username" id="username" 
-                        class="glass-input w-full px-4 py-2 rounded-lg transition duration-150 
-                             <?php echo (!empty($username_err)) ? 'border-red-500' : ''; ?>" 
-                        value="<?php echo htmlspecialchars($username); ?>" 
-                        placeholder="Enter your username">
-                <?php if (!empty($username_err)): ?>
-                    <p class="text-red-300 text-xs mt-1 drop-shadow"><?php echo $username_err; ?></p>
+                <?php if(!empty($login_err)): ?>
+                    <div class="bg-red-500/15 border border-red-400/60 text-red-600 px-4 py-3 rounded-2xl text-sm shadow-inner" role="alert">
+                        <?php echo $login_err; ?>
+                    </div>
                 <?php endif; ?>
-            </div>
 
-            <!-- Password Field -->
-            <div class="mb-6">
-                <label for="password" class="block text-sm font-medium text-white mb-1 drop-shadow">Password</label>
-                <!-- glass-input class for transparency and clean look -->
-                <input type="password" name="password" id="password" 
-                        class="glass-input w-full px-4 py-2 rounded-lg transition duration-150 
-                             <?php echo (!empty($password_err)) ? 'border-red-500' : ''; ?>" 
-                        placeholder="••••••••">
-                <?php if (!empty($password_err)): ?>
-                    <p class="text-red-300 text-xs mt-1 drop-shadow"><?php echo $password_err; ?></p>
-                <?php endif; ?>
-            </div>
-            
-            <!-- Submit Button -->
-            <!-- glass-button class for the glassy look -->
-            <button type="submit" 
-                     class="glass-button w-full flex justify-center py-2 px-4 border border-transparent rounded-lg shadow-lg text-sm font-medium text-white hover:shadow-xl transition duration-300 ease-in-out">
-                Sign In
-            </button>
-        </form>
+                <form action="<?php echo htmlspecialchars($_SERVER["PHP_SELF"]); ?>" method="post" class="space-y-5">
+                    <div>
+                        <label for="username" class="text-xs font-semibold uppercase tracking-[0.4em] text-white-500 mb-2 block">
+                            Username
+                        </label>
+                        <input 
+                            type="text" 
+                            name="username" 
+                            id="username" 
+                            class="glass-input <?php echo (!empty($username_err)) ? 'is-invalid' : ''; ?>" 
+                            value="<?php echo htmlspecialchars($username); ?>" 
+                            placeholder="Enter your username">
+                        <?php if (!empty($username_err)): ?>
+                            <p class="invalid-feedback"><?php echo $username_err; ?></p>
+                        <?php endif; ?>
+                    </div>
 
-        <!-- Footer Link -->
-        <div class="mt-6 text-center text-sm">
-            <p class="text-indigo-200">Don't have an account? 
-                <a href="register.php" class="font-medium text-white hover:text-indigo-100 transition drop-shadow-lg">
-                    Sign up now
-                </a>.
-            </p>
+                    <div>
+                        <label for="password" class="text-xs font-semibold uppercase tracking-[0.4em] text-white-500 mb-2 block">
+                            Password
+                        </label>
+                        <input 
+                            type="password" 
+                            name="password" 
+                            id="password" 
+                            class="glass-input <?php echo (!empty($password_err)) ? 'is-invalid' : ''; ?>" 
+                            placeholder="Enter your password">
+                        <?php if (!empty($password_err)): ?>
+                            <p class="invalid-feedback"><?php echo $password_err; ?></p>
+                        <?php endif; ?>
+                    </div>
+
+                    <button type="submit" class="glass-button w-full text-base">
+                        Sign In
+                    </button>
+                </form>
+
+                <div class="text-center text-sm text-white-500">
+                    Need an account?
+                    <a href="register.php" class="font-semibold text-slate-800 hover:text-indigo-500 transition">
+                        Register for AUFthorize
+                    </a>
+                </div>
+            </section>
         </div>
-    </div>
+    </main>
 </body>
 </html>
 <?php
-// NOTE: Your original PHP code block end tag was not present, adding it here.
+// NOTE: Additional PHP logic can be placed here if needed.
 ?>
