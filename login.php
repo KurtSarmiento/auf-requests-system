@@ -9,6 +9,7 @@ if(isset($_SESSION["loggedin"]) && $_SESSION["loggedin"] === true){
 }
  
 // Include config file
+// NOTE: Make sure your "db_config.php" file is in the same directory.
 require_once "db_config.php";
  
 $username = $password = "";
@@ -49,7 +50,7 @@ if($_SERVER["REQUEST_METHOD"] == "POST"){
                 mysqli_stmt_store_result($stmt);
                 
                 // Check if username exists, if yes then verify password
-                if(mysqli_stmt_num_rows($stmt) == 1){                    
+                if(mysqli_stmt_num_rows($stmt) == 1){                      
                     // Bind result variables
                     mysqli_stmt_bind_result($stmt, $user_id, $username, $hashed_password, $role, $full_name, $org_id);
                     if(mysqli_stmt_fetch($stmt)){
@@ -86,7 +87,9 @@ if($_SERVER["REQUEST_METHOD"] == "POST"){
     }
     
     // Close connection
-    mysqli_close($link);
+    // NOTE: This will fail if the script hits a header redirect above, but is standard practice.
+    // If you need the link object later in the script for other purposes, you might move this.
+    mysqli_close($link); 
 }
 ?>
 
@@ -96,51 +99,32 @@ if($_SERVER["REQUEST_METHOD"] == "POST"){
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - AUF System</title>
+    <!-- Load Tailwind CSS from CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        /* Custom font and base colors for an institutional look */
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #e5e7eb; /* Light gray background fallback */
-        }
-        
-        /* * CSS for the Moving Gradient Background 
-         */
-        .login-bg {
-            background: linear-gradient(-45deg, #1e3a8a, #172554, #4f46e5, #3730a3);
-            background-size: 400% 400%; /* Make the gradient larger than the viewport */
-            animation: gradient-shift 15s ease infinite; /* 15 seconds for a smooth, slow loop */
-        }
-        
-        @keyframes gradient-shift {
-            0% {
-                background-position: 0% 50%;
-            }
-            50% {
-                background-position: 100% 50%;
-            }
-            100% {
-                background-position: 0% 50%;
-            }
-        }
-    </style>
+    <!-- Link to the external stylesheet -->
+    <link rel="stylesheet" href="css/styles.css">
 </head>
 <body class="login-bg min-h-screen flex items-center justify-center p-4">
 
     <!-- Login Container Card -->
-    <div class="w-full max-w-md bg-white rounded-xl shadow-2xl overflow-hidden p-8 sm:p-10">
+    <!-- The glass-card class applies the blur and transparency defined in style.css -->
+    <div class="glass-card w-full max-w-md rounded-xl shadow-2xl overflow-hidden p-8 sm:p-10">
         
         <!-- Header / Logo Area -->
         <div class="text-center mb-8">
-            <h1 class="text-3xl font-extrabold text-indigo-800">AUF Request System</h1>
-            <p class="text-gray-500 mt-1">Sign in to your account</p>
+            <!-- Logo Placeholder -->
+            <!-- You can replace the 'placeholder.png' with your actual logo path -->
+            <img src="https://placehold.co/128x64/2563EB/ffffff?text=LOGO" onerror="this.src='https://placehold.co/128x64/2563EB/ffffff?text=LOGO'" alt="System Logo" class="mx-auto h-16 w-auto mb-4 rounded-lg" id="app-logo">
+            
+            <h1 class="text-3xl font-extrabold text-white drop-shadow-lg">AUF Request System</h1>
+            <p class="text-indigo-200 mt-1">Sign in to your account</p>
         </div>
 
         <?php 
         // Display login error if set
         if(!empty($login_err)){
-            echo '<div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg mb-4 text-sm" role="alert">' . $login_err . '</div>';
-        }        
+            echo '<div class="bg-red-500/30 border border-red-400 text-white px-4 py-3 rounded-lg mb-4 text-sm backdrop-blur-sm" role="alert">' . $login_err . '</div>';
+        }      
         ?>
 
         <!-- Login Form -->
@@ -148,40 +132,43 @@ if($_SERVER["REQUEST_METHOD"] == "POST"){
             
             <!-- Username Field -->
             <div class="mb-5">
-                <label for="username" class="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                <label for="username" class="block text-sm font-medium text-white mb-1 drop-shadow">Username</label>
+                <!-- glass-input class for transparency and clean look -->
                 <input type="text" name="username" id="username" 
-                       class="w-full px-4 py-2 border rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 
-                              <?php echo (!empty($username_err)) ? 'border-red-500' : 'border-gray-300'; ?>" 
-                       value="<?php echo htmlspecialchars($username); ?>" 
-                       placeholder="Enter your username">
+                        class="glass-input w-full px-4 py-2 rounded-lg transition duration-150 
+                             <?php echo (!empty($username_err)) ? 'border-red-500' : ''; ?>" 
+                        value="<?php echo htmlspecialchars($username); ?>" 
+                        placeholder="Enter your username">
                 <?php if (!empty($username_err)): ?>
-                    <p class="text-red-500 text-xs mt-1"><?php echo $username_err; ?></p>
+                    <p class="text-red-300 text-xs mt-1 drop-shadow"><?php echo $username_err; ?></p>
                 <?php endif; ?>
             </div>
 
             <!-- Password Field -->
             <div class="mb-6">
-                <label for="password" class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                <label for="password" class="block text-sm font-medium text-white mb-1 drop-shadow">Password</label>
+                <!-- glass-input class for transparency and clean look -->
                 <input type="password" name="password" id="password" 
-                       class="w-full px-4 py-2 border rounded-lg focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 
-                              <?php echo (!empty($password_err)) ? 'border-red-500' : 'border-gray-300'; ?>" 
-                       placeholder="••••••••">
+                        class="glass-input w-full px-4 py-2 rounded-lg transition duration-150 
+                             <?php echo (!empty($password_err)) ? 'border-red-500' : ''; ?>" 
+                        placeholder="••••••••">
                 <?php if (!empty($password_err)): ?>
-                    <p class="text-red-500 text-xs mt-1"><?php echo $password_err; ?></p>
+                    <p class="text-red-300 text-xs mt-1 drop-shadow"><?php echo $password_err; ?></p>
                 <?php endif; ?>
             </div>
             
             <!-- Submit Button -->
+            <!-- glass-button class for the glassy look -->
             <button type="submit" 
-                    class="w-full flex justify-center py-2 px-4 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out">
+                     class="glass-button w-full flex justify-center py-2 px-4 border border-transparent rounded-lg shadow-lg text-sm font-medium text-white hover:shadow-xl transition duration-300 ease-in-out">
                 Sign In
             </button>
         </form>
 
         <!-- Footer Link -->
         <div class="mt-6 text-center text-sm">
-            <p class="text-gray-600">Don't have an account? 
-                <a href="register.php" class="font-medium text-indigo-600 hover:text-indigo-500">
+            <p class="text-indigo-200">Don't have an account? 
+                <a href="register.php" class="font-medium text-white hover:text-indigo-100 transition drop-shadow-lg">
                     Sign up now
                 </a>.
             </p>
@@ -190,3 +177,5 @@ if($_SERVER["REQUEST_METHOD"] == "POST"){
 </body>
 </html>
 <?php
+// NOTE: Your original PHP code block end tag was not present, adding it here.
+?>

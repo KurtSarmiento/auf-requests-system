@@ -1,7 +1,124 @@
 /* Custom styles from layout_template.php */
+/* -------------------------------------- */
+/* 1. Global & Background Styling (from original) */
+/* -------------------------------------- */
+
+/* Ensure the body uses the Inter font and spans the full height */
+
+
+/* CSS for the Moving Gradient Background */
+/* -------------------------------------- */
+/* 1. Global & Background Styling (from original) */
+/* -------------------------------------- */
+
+/* Ensure the body uses the Inter font and spans the full height */
+body {
+    font-family: 'Inter', sans-serif;
+    color: #fff; /* Default text color for the background */
+}
+
+/* CSS for the Moving Gradient Background */
+.login-bg {
+    /* Subtle cool colors for a premium look */
+    background: linear-gradient(-45deg, #2563EB, #1D4ED8, #4F46E5, #3730A3);
+    background-size: 400% 400%; 
+    animation: gradient-shift 15s ease infinite;
+}
+
+@keyframes gradient-shift {
+    0% {
+        background-position: 0% 50%;
+    }
+    50% {
+        background-position: 100% 50%;
+    }
+    100% {
+        background-position: 0% 50%;
+    }
+}
+
+/* -------------------------------------- */
+/* 2. Glassmorphism Effects */
+/* -------------------------------------- */
+
+/* Glass Login Card */
+.glass-card {
+    position: relative; /* NEW: Required for the glossy overlay */
+    /* Semi-transparent white background - made brighter and more opaque to match sample */
+    background: rgba(255, 255, 255, 0.25);
+    /* The key to the glass effect: blur the background behind the element */
+    backdrop-filter: blur(12px); /* Increased blur for stronger effect */
+    -webkit-backdrop-filter: blur(12px); 
+    
+    /* Light border/ring effect for definition - made brighter/more visible */
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    border-radius: 1.5rem; /* Large rounded corners */
+    
+    /* More prominent shadow for depth and glow */
+    box-shadow: 0 8px 40px 0 rgba(31, 38, 135, 0.45);
+}
+
+/* NEW: Pseudo-element to create the reflective shine (glossy glare) */
+.glass-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    /* Create a diagonal gradient for the reflection */
+    background: linear-gradient(
+        135deg, 
+        rgba(255, 255, 255, 0) 0%, 
+        rgba(255, 255, 255, 0.5) 15%, /* Brightest point of shine */
+        rgba(255, 255, 255, 0) 45%  /* Fading out */
+    );
+    /* Shift and rotate the element to simulate a light source from the top-left */
+    transform: translate(-50%, -50%) rotate(45deg);
+    width: 200%; /* Scale up to cover the whole diagonal shine area */
+    height: 200%;
+    border-radius: 1.5rem; /* Match card radius for soft edges */
+    pointer-events: none; /* Make sure the shine doesn't block clicks */
+    z-index: 1; /* Place the shine layer below the actual form content */
+}
+
+/* Glass Input Fields */
+.glass-input {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    color: white; /* Text inside the input */
+    padding: 0.75rem 1rem;
+    outline: none;
+}
+
+/* Change placeholder color for better visibility against transparent background */
+.glass-input::placeholder {
+    color: rgba(255, 255, 255, 0.6);
+}
+
+/* Input focus effect */
+.glass-input:focus {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(165, 180, 252, 0.7); /* Light indigo focus ring */
+    box-shadow: 0 0 0 3px rgba(165, 180, 252, 0.3);
+}
+
+/* Glass Submit Button */
+.glass-button {
+    background: rgba(165, 180, 252, 0.8); /* Semi-transparent indigo */
+    border: none;
+    font-weight: 600;
+    transition: all 0.2s ease-in-out;
+}
+
+.glass-button:hover {
+    background: rgba(129, 140, 248, 0.9); /* Slightly darker on hover */
+    transform: translateY(-1px);
+}
+
 body { 
     font-family: 'Inter', sans-serif; 
     background-color: #f8f9fa; /* Off-white / light gray */
+    font-family: 'Inter', sans-serif;
+    color: #fff;
 }
 
 /* Custom blue shades for consistency (as defined in inline block) */
