@@ -126,10 +126,16 @@
                 </div>
 
                 <div class="p-5 border border-gray-200 rounded-lg bg-gray-50/70">
-                    <label for="supporting_file" class="block text-sm font-medium text-gray-700 mb-2">Supporting Document (e.g., Proposal, Quotation, Receipt)</label>
-                    <input type="file" name="supporting_file" id="supporting_file" 
-                                class="mt-1 block w-full border border-gray-300 rounded-lg p-2 bg-white text-sm <?php echo (!empty($file_err)) ? 'is-invalid' : ''; ?>">
-                    <p class="text-xs text-gray-500 mt-1">Max 5MB. Allowed types: PDF, JPG, PNG, DOC/DOCX. (Optional)</p>
+                    <label for="supporting_files" class="block text-sm font-medium text-gray-700 mb-2">Supporting Documents (JPEG only)</label>
+                    <input type="file" 
+                        name="supporting_files[]" 
+                        id="supporting_files" 
+                        multiple 
+                        accept="image/jpeg, .jpeg, .jpg"
+                        class="mt-1 block w-full border border-gray-300 rounded-lg p-2 bg-white text-sm <?php echo (!empty($file_err)) ? 'is-invalid' : ''; ?>">
+                    <p class="text-xs text-red-500 font-bold mt-1">
+                        Only **JPEG/JPG** files are allowed. Max 5MB per file. (Required for Liquidation/Reimbursement)
+                    </p>
                     <span class="invalid-feedback"><?php echo $file_err; ?></span>
                 </div>
 

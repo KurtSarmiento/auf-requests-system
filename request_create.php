@@ -41,11 +41,7 @@ if (!empty($_SESSION['org_name'])) {
 $title = $type = $amount_str = $description = $budget_details_json = $activity_date = "";
 $title_err = $type_err = $amount_err = $description_err = $file_err = $general_err = $activity_date_err = "";
 
-// Variables for file handling
-$uploaded_file_name = null; // The unique filename on the server
-$original_file_name = null; // The file's original name
-$uploaded_file_path = null; // The full path on the server
-$file_upload_success = false;
+// Variables for file handling (These are only initialized here, not populated from the new handler)
 $upload_dir = __DIR__ . "/uploads/"; 
 
 // --- GET AND VALIDATE REQUEST TYPE FROM URL ---
@@ -202,7 +198,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 // Ensure the selected ID is actually one of the approved requests
                 $valid_link = false;
                 foreach ($approved_brs as $br) {
-                    if ($br['request_id'] === $raw_original_request_id) {
+                    if ((int)$br['request_id'] === $raw_original_request_id) {
                         $valid_link = true;
                         break;
                     }
@@ -247,13 +243,21 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             }
         }
         
-        // --- 2. Validate and Handle File Upload (using the new helper function) ---
-        $file_result = handleFileUpload($_FILES["supporting_file"] ?? null, $upload_dir);
-        $file_err = $file_result['error'];
-        $file_upload_success = $file_result['success'];
-        $uploaded_file_name = $file_result['uploaded_file_name'];
-        $uploaded_file_path = $file_result['uploaded_file_path'];
-        $original_file_name = $file_result['original_file_name'];
+        // --- 2. Validate and Handle File Uploads (Multi-File Handler) ---
+        // This is the correct way to use the multi-file handler
+        $upload_results = handleMultipleFileUpload($_FILES["supporting_files"] ?? null, $upload_dir, ['image/jpeg']);
+        $file_err = $upload_results['error'];
+        $successful_uploads = $upload_results['successful_uploads']; // This is the array we use for insertion
+
+        // REMOVED: $uploaded_file_name, $uploaded_file_path, $original_file_name assignments 
+        // that were causing the warnings. They are no longer needed globally.
+
+        // Required File Check
+        $file_required = ($type === 'Liquidation Report' || $type === 'Reimbursement');
+        
+        if ($file_required && empty($successful_uploads)) {
+            $file_err = (empty($file_err) ? "" : $file_err . " ") . "At least one supporting JPEG file is required for {$type}.";
+        }
         
         // Check input errors before inserting into database
         if (empty($title_err) && empty($type_err) && empty($amount_err) && empty($description_err) && empty($file_err) && empty($general_err) && empty($activity_date_err) && empty($original_request_id_err)) {
@@ -316,25 +320,28 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     $general_err = "Request statement failed: " . mysqli_error($link);
                     $success = false;
                 }
-
-                // --- 4. Insert File Details if a file was uploaded successfully ---
-                if ($success && $request_id > 0 && $uploaded_file_name !== null) {
+                // --- 4. Insert File Details for ALL successfully uploaded files ---
+                if ($success && $request_id > 0 && !empty($successful_uploads)) {
                     $sql_file = "
                         INSERT INTO files (request_id, file_name, file_path, original_file_name) 
                         VALUES (?, ?, ?, ?)
                     ";
                     
                     if ($stmt_file = mysqli_prepare($link, $sql_file)) {
-                        mysqli_stmt_bind_param($stmt_file, "isss", 
-                            $request_id, 
-                            $uploaded_file_name, 
-                            $uploaded_file_path,
-                            $original_file_name
-                        );
-                        
-                        if (!mysqli_stmt_execute($stmt_file)) {
-                            $general_err .= " File details recording failed: " . mysqli_error($link);
-                            $success = false;
+                        // Loop through each successfully uploaded file
+                        foreach ($successful_uploads as $file_data) {
+                            mysqli_stmt_bind_param($stmt_file, "isss", 
+                                $request_id, 
+                                $file_data['uploaded_file_name'], 
+                                $file_data['uploaded_file_path'],
+                                $file_data['original_file_name']
+                            );
+                            
+                            if (!mysqli_stmt_execute($stmt_file)) {
+                                $general_err .= " File details recording failed for {$file_data['original_file_name']}: " . mysqli_error($link);
+                                $success = false;
+                                break; // Stop and rollback if one file record fails
+                            }
                         }
                         mysqli_stmt_close($stmt_file);
                     } else {
@@ -356,9 +363,18 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             } else {
                 mysqli_rollback($link);
                 // Clean up the uploaded file if the database transaction failed
-                if ($uploaded_file_path && file_exists($uploaded_file_path)) {
-                    unlink($uploaded_file_path);
-                    $general_err .= " (Uploaded file was cleaned up.)";
+                if (!empty($successful_uploads)) {
+                    $cleanup_count = 0;
+                    foreach ($successful_uploads as $file_data) {
+                        $path_to_clean = $file_data['uploaded_file_path'];
+                        if ($path_to_clean && file_exists($path_to_clean)) {
+                            unlink($path_to_clean);
+                            $cleanup_count++;
+                        }
+                    }
+                    if ($cleanup_count > 0) {
+                        $general_err .= " ({$cleanup_count} uploaded file(s) were cleaned up.)";
+                    }
                 }
             }
         }
