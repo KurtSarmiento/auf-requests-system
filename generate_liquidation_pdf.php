@@ -23,7 +23,7 @@ if ($liquidation_id === 0) {
 
 // --- Helper for Signatures (Function Definition) ---
 function get_signature_data($status_key, $date_key, $request, $role, $sig_paths) {
-     // Define official names and titles here
+    // Define official names and titles here
     $role_names = [
         'officer' => htmlspecialchars($request['officer_name'] ?? 'Requestor'),
         'adviser' => 'Dr. Ruel Reyes', // Placeholder
@@ -92,6 +92,44 @@ if (!$liq) {
 }
 
 // ----------------------------------------------------------------------
+// ✅ Fetch Attached Files
+// ----------------------------------------------------------------------
+$attached_files = [];
+$files_sql = "
+    SELECT file_path, file_name, original_file_name
+    FROM files
+    WHERE request_id = ?
+";
+// IMPORTANT: Re-use the existing database connection ($link)
+$files_stmt = mysqli_prepare($link, $files_sql);
+mysqli_stmt_bind_param($files_stmt, "i", $liquidation_id); // Use $liquidation_id
+mysqli_stmt_execute($files_stmt);
+$files_result = mysqli_stmt_get_result($files_stmt);
+
+while ($file = mysqli_fetch_assoc($files_result)) {
+    // Resolve actual path: prefer stored file_path, fallback to uploads/<file_name>
+    $real_path = null;
+    $paths_to_try = [];
+    if (!empty($file['file_path'])) $paths_to_try[] = $file['file_path'];
+    // Assuming 'uploads' folder is in the same directory as this script
+    if (!empty($file['file_name'])) $paths_to_try[] = __DIR__ . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . $file['file_name'];
+
+    foreach ($paths_to_try as $p) {
+        if (file_exists($p) && is_readable($p)) {
+            $real_path = $p;
+            break;
+        }
+    }
+
+    if ($real_path) {
+        $file['real_path'] = $real_path;
+        $attached_files[] = $file;
+    }
+}
+mysqli_stmt_close($files_stmt);
+// ----------------------------------------------------------------------
+
+// ----------------------------------------------------------------------
 // 🚨 CRITICAL STEP: Fetch the Projected Budget from the Original Request
 // ----------------------------------------------------------------------
 
@@ -114,7 +152,6 @@ if ($original_br_id > 0) {
     mysqli_stmt_close($stmt_br);
 } else {
     // Fallback: If no original request ID is linked, use the 'amount' from the liquidation row itself 
-    // (This assumes 'amount' holds the budget received/approved for liquidation)
     $projected_budget = (float)str_replace(',', '', $liq['amount'] ?? 0); 
 }
 
@@ -169,9 +206,6 @@ $sig_adviser = get_signature_data('adviser_status', 'adviser_decision_date', $li
 $sig_dean = get_signature_data('dean_status', 'dean_decision_date', $liq, 'dean', $sig_paths);
 $sig_osafa = get_signature_data('osafa_status', 'osafa_decision_date', $liq, 'osafa', $sig_paths);
 $sig_afo = get_signature_data('afo_status', 'afo_decision_date', $liq, 'afo', $sig_paths);
-
-
-mysqli_close($link);
 
 
 // --- CSS (Adjusted for the Summary Table) ---
@@ -262,10 +296,11 @@ $html = '
         <div style="border: 1px solid #000; min-height: 50px; padding: 5px; margin-top: 5px; font-size: 8pt;">
             ' . nl2br(htmlspecialchars($liq['description'] ?? 'No justification provided.')) . '
         </div>
+        
     </div>
     
     <p style="font-weight: bold; margin-top: 10px; margin-bottom: 2px;">DETAILED EXPENSES:</p>
-          <div style="border: 1px solid #000; padding: 0; font-size: 8pt;">
+            <div style="border: 1px solid #000; padding: 0; font-size: 8pt;">
                 <table style="width: 100%; border-collapse: collapse;">
                     <thead>
                         <tr style="background-color: #f0f0f0;">
@@ -283,7 +318,7 @@ $html = '
                         </tr>
                     </tbody>
                 </table>
-          </div>
+            </div>
     
     <div style="clear: both;"></div>
     
@@ -370,8 +405,43 @@ $html = '
 try {
     $mpdf = new Mpdf(['mode' => 'utf-8', 'format' => 'Legal']);
     $mpdf->SetTitle("Liquidation Report #{$liquidation_id}");
+    
+    // Write the main liquidation form content (Page 1)
     $mpdf->WriteHTML($html);
     
+    // ----------------------------------------------------------------------
+    // ✅ Logic to add attachments to subsequent pages
+    // ----------------------------------------------------------------------
+    if (!empty($attached_files)) {
+        $file_counter = 1;
+        foreach ($attached_files as $file) {
+            // Check if the file is an image
+            $mime = @mime_content_type($file['real_path']);
+            if (str_starts_with($mime, 'image/') || in_array(pathinfo($file['real_path'], PATHINFO_EXTENSION), ['jpg', 'jpeg', 'png', 'gif'])) {
+                
+                // Add a new page for each attachment
+                $mpdf->AddPage();
+                
+                $attachment_html = '
+                    <div style="text-align: center; margin: 0 auto; font-family: Arial, sans-serif;">
+                        <h3 style="font-size: 14pt;">Attachment ' . $file_counter . ': ' . htmlspecialchars($file['original_file_name']) . '</h3>
+                        <p style="font-size: 10pt; margin-top: -10px;">Liquidation ID: ' . $liquidation_id . '</p>
+                        
+                        <img 
+                            src="' . $file['real_path'] . '" 
+                            style="max-width: 95%; max-height: 60%; display: block; margin: 20px auto; border: 1px solid #ccc; box-sizing: border-box;" 
+                        />
+                    </div>
+                ';
+                
+                $mpdf->WriteHTML($attachment_html);
+                $file_counter++;
+            }
+        }
+    }
+    // ----------------------------------------------------------------------
+
+
     $filename = "Liquidation_Report_{$liquidation_id}.pdf";
     if ($cliPdfMode) {
         echo $mpdf->Output($filename, 'S');
@@ -382,5 +452,8 @@ try {
 } catch (MpdfException $e) {
     echo "mPDF Error: " . $e->getMessage();
 }
+
+// Final database connection close
+mysqli_close($link);
 
 ?>

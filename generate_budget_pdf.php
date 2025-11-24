@@ -23,11 +23,11 @@ if ($request_id === 0) {
 
 // --- Fetch Request Data ---
 $sql = "SELECT 
-            r.*, 
-            r.activity_date,
-            r.budget_details_json,
-            u.full_name AS officer_name, 
-            o.org_name
+             r.*, 
+             r.activity_date,
+             r.budget_details_json,
+             u.full_name AS officer_name, 
+             o.org_name
         FROM requests r
         INNER JOIN users u ON r.user_id = u.user_id
         INNER JOIN organizations o ON u.org_id = o.org_id
@@ -48,6 +48,45 @@ mysqli_stmt_bind_param($stmt, $types, ...$params);
 mysqli_stmt_execute($stmt);
 $result = mysqli_stmt_get_result($stmt);
 $request = mysqli_fetch_assoc($result);
+
+// ----------------------------------------------------------------------
+// ✅ NEW: Fetch Attached Files
+// ----------------------------------------------------------------------
+$attached_files = [];
+$files_sql = "
+    SELECT file_path, file_name, original_file_name
+    FROM files
+    WHERE request_id = ?
+";
+// IMPORTANT: Re-use the existing database connection ($link)
+$files_stmt = mysqli_prepare($link, $files_sql);
+mysqli_stmt_bind_param($files_stmt, "i", $request_id);
+mysqli_stmt_execute($files_stmt);
+$files_result = mysqli_stmt_get_result($files_stmt);
+
+while ($file = mysqli_fetch_assoc($files_result)) {
+    // Resolve actual path: prefer stored file_path, fallback to uploads/<file_name>
+    $real_path = null;
+    $paths_to_try = [];
+    if (!empty($file['file_path'])) $paths_to_try[] = $file['file_path'];
+    // Assuming 'uploads' folder is in the same directory as this script
+    if (!empty($file['file_name'])) $paths_to_try[] = __DIR__ . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . $file['file_name'];
+
+    foreach ($paths_to_try as $p) {
+        if (file_exists($p) && is_readable($p)) {
+            $real_path = $p;
+            break;
+        }
+    }
+
+    if ($real_path) {
+        $file['real_path'] = $real_path;
+        $attached_files[] = $file;
+    }
+}
+mysqli_stmt_close($files_stmt);
+// ----------------------------------------------------------------------
+
 
 // --- Budget Data Preparation ---
 $budget_items = [];
@@ -80,12 +119,12 @@ if (!empty($budget_items)) {
         $item_total_formatted = number_format($item_total_calc, 2);
         
         $budget_html .= '
-            <tr>
-                <td style="text-align: left; padding: 4px 5px; border-right: 1px solid #000;">' . $item_description . '</td>
-                <td style="text-align: center; padding: 4px 5px; border-right: 1px solid #000;">' . $item_qty . '</td>
-                <td style="text-align: right; padding: 4px 5px; border-right: 1px solid #000;">₱' . $item_cost_formatted . '</td>
-                <td style="text-align: right; padding: 4px 5px;">₱' . $item_total_formatted . '</td>
-            </tr>
+             <tr>
+                 <td style="text-align: left; padding: 4px 5px; border-right: 1px solid #000;">' . $item_description . '</td>
+                 <td style="text-align: center; padding: 4px 5px; border-right: 1px solid #000;">' . $item_qty . '</td>
+                 <td style="text-align: right; padding: 4px 5px; border-right: 1px solid #000;">₱' . $item_cost_formatted . '</td>
+                 <td style="text-align: right; padding: 4px 5px;">₱' . $item_total_formatted . '</td>
+             </tr>
         ';
     }
 }
@@ -108,8 +147,11 @@ if (!empty($request['date_budget_available'])) {
 
 // ... rest of the PHP logic ...
 
+// Close the first statement, but keep $link open for the duration
 mysqli_stmt_close($stmt);
-mysqli_close($link);
+// NOTE: Don't close $link here, as it's needed for the subsequent mysqli_stmt_close($files_stmt); 
+// and the main mysqli_close($link) is at the end.
+
 
 if (!$request) {
     die("Budget Request not found or you don't have permission to view it.");
@@ -117,6 +159,7 @@ if (!$request) {
 
 
 // --- Signature/Status Helper Function ---
+// (Your existing function get_signature_data remains here unchanged)
 /**
  * Retrieves signature data (name, date, digital signature image HTML) based on approval status.
  * @param string $status_key The database column name for the status (e.g., 'dean_status').
@@ -127,45 +170,45 @@ if (!$request) {
  * @return array Contains 'name', 'date', and 'img_html'.
  */
 function get_signature_data($status_key, $date_key, $request, $role, $sig_paths) {
-    
-    // 🔹 Define official names and titles here
-    $role_names = [
-        'officer' => htmlspecialchars($request['officer_name'] ?? 'Requestor'),
-        'adviser' => 'Dr. Ruel Reyes', // Replace with actual logic/name
-        'dean' => 'Engr. Jerrence Taguines', // Replace with actual logic/name
-        'osafa' => 'Mr. Prince Romel Pangilinan',
-        'afo' => 'Mr. Paul Baluyut',
-    ];
+     
+     // 🔹 Define official names and titles here
+     $role_names = [
+         'officer' => htmlspecialchars($request['officer_name'] ?? 'Requestor'),
+         'adviser' => 'Dr. Ruel Reyes', // Replace with actual logic/name
+         'dean' => 'Engr. Jerrence Taguines', // Replace with actual logic/name
+         'osafa' => 'Mr. Prince Romel Pangilinan',
+         'afo' => 'Mr. Paul Baluyut',
+     ];
 
-    $name = $role_names[$role] ?? '';
-    $sig_img_path = $sig_paths[$role] ?? '';
-    
-    // Officer (Requestor) logic is slightly different: Always 'submitted'
-    if ($role === 'officer') {
-        $date_val = $request['date_submitted'] ?? '';
-        $date_formatted = (!empty($date_val) && strtotime($date_val)) ? date('m/d/Y', strtotime($date_val)) : date('m/d/Y');
-        // Requestor typically doesn't show a digital signature, just the printed name
-        $img_html = '<img src="' . $sig_img_path . '" style="height: 30px; width: auto; margin-top: -5px;">';
-        return ['name' => $name, 'date' => $date_formatted, 'img_html' => $img_html]; 
-    }
+     $name = $role_names[$role] ?? '';
+     $sig_img_path = $sig_paths[$role] ?? '';
+     
+     // Officer (Requestor) logic is slightly different: Always 'submitted'
+     if ($role === 'officer') {
+         $date_val = $request['date_submitted'] ?? '';
+         $date_formatted = (!empty($date_val) && strtotime($date_val)) ? date('m/d/Y', strtotime($date_val)) : date('m/d/Y');
+         // Requestor typically doesn't show a digital signature, just the printed name
+         $img_html = '<img src="' . $sig_img_path . '" style="height: 30px; width: auto; margin-top: -5px;">';
+         return ['name' => $name, 'date' => $date_formatted, 'img_html' => $img_html]; 
+     }
 
-    // Signatory logic
-    $status = strtolower($request[$status_key] ?? '');
-    $is_approved = ($status === 'approved');
+     // Signatory logic
+     $status = strtolower($request[$status_key] ?? '');
+     $is_approved = ($status === 'approved');
 
-    if ($is_approved) {
-        $date_val = $request[$date_key] ?? '';
-        $date_formatted = (!empty($date_val) && strtotime($date_val)) ? date('m/d/Y', strtotime($date_val)) : '';
-        
-        // Digital Signature HTML
-        $img_html = '<img src="' . $sig_img_path . '" style="height: 30px; width: auto; margin-top: -5px;">';
-        
-        return ['name' => $name, 'date' => $date_formatted, 'img_html' => $img_html];
-    }
+     if ($is_approved) {
+         $date_val = $request[$date_key] ?? '';
+         $date_formatted = (!empty($date_val) && strtotime($date_val)) ? date('m/d/Y', strtotime($date_val)) : '';
+         
+         // Digital Signature HTML
+         $img_html = '<img src="' . $sig_img_path . '" style="height: 30px; width: auto; margin-top: -5px;">';
+         
+         return ['name' => $name, 'date' => $date_formatted, 'img_html' => $img_html];
+     }
 
-    // Pending/Rejected state
-    $empty_line_html = '<div style="height: 25px;"></div>';
-    return ['name' => '', 'date' => '', 'img_html' => $empty_line_html];
+     // Pending/Rejected state
+     $empty_line_html = '<div style="height: 25px;"></div>';
+     return ['name' => '', 'date' => '', 'img_html' => $empty_line_html];
 }
 
 // --- Signature Data and Paths (MUST BE UPDATED) ---
@@ -249,13 +292,13 @@ if (!empty($expense_details)) {
     foreach ($expense_details as $item) {
         $item_count++;
         $expense_rows .= '
-            <tr>
-                <td class="center">' . $item_count . '</td>
-                <td>' . htmlspecialchars($item['description']) . '</td>
-                <td class="right">' . number_format($item['cost'] ?? 0, 2) . '</td>
-                <td class="center">' . htmlspecialchars($item['quantity']) . '</td>
-                <td class="right">' . number_format(($item['cost'] ?? 0) * ($item['quantity'] ?? 0), 2) . '</td>
-            </tr>
+             <tr>
+                 <td class="center">' . $item_count . '</td>
+                 <td>' . htmlspecialchars($item['description']) . '</td>
+                 <td class="right">' . number_format($item['cost'] ?? 0, 2) . '</td>
+                 <td class="center">' . htmlspecialchars($item['quantity']) . '</td>
+                 <td class="right">' . number_format(($item['cost'] ?? 0) * ($item['quantity'] ?? 0), 2) . '</td>
+             </tr>
         ';
     }
 } else {
@@ -309,22 +352,22 @@ $html = '
     
     <p style="font-weight: bold; margin-top: 10px; margin-bottom: 2px;">DETAILED BUDGET BREAKDOWN:</p>
           <div style="border: 1px solid #000; padding: 0; font-size: 8pt;">
-                <table style="width: 100%; border-collapse: collapse;">
-                      <thead>
-                            <tr style="background-color: #f0f0f0;">
+               <table style="width: 100%; border-collapse: collapse;">
+                    <thead>
+                           <tr style="background-color: #f0f0f0;">
                                 <th style="border: 1px solid #000; padding: 5px; width: 45%; text-align: left;">Particulars / Description</th>
                                 <th style="border: 1px solid #000; padding: 5px; width: 15%;">Qty.</th>
                                 <th style="border: 1px solid #000; padding: 5px; width: 20%;">Unit Cost</th>
                                 <th style="border: 1px solid #000; padding: 5px; width: 20%;">Total Cost</th>
                             </tr>
-                      </thead>
-                      <tbody>
+                    </thead>
+                    <tbody>
                             ' . ($budget_html ?: '<tr><td colspan="4" style="text-align: center; padding: 10px; border: 1px solid #000;">No budget items specified.</td></tr>') . '
                             <tr>
                                 <td colspan="3" style="text-align: right; font-weight: bold; border-top: 1px solid #000; border-right: 1px solid #000; padding: 5px;">GRAND TOTAL:</td>
                                 <td style="font-weight: bold; border-top: 1px solid #000; text-align: right; padding: 5px;">₱' . number_format($clean_total_amount, 2) . '</td>
                             </tr>
-                      </tbody>
+                    </tbody>
                 </table>
           </div>
       
@@ -397,13 +440,51 @@ $html = '
 </body>
 </html>
 ';
+// Don't close $link here yet
+// mysqli_close($link); 
 
 // --- mPDF Generation ---
 try {
     $mpdf = new Mpdf(['mode' => 'utf-8', 'format' => 'Legal']);
     $mpdf->SetTitle("Budget Request #{$request_id}");
+    
+    // REMOVED: $mpdf->autoImageOrientation = true; (Caused error in your mPDF version)
+    
+    // Write the main request form content (Page 1)
     $mpdf->WriteHTML($html);
     
+    // ----------------------------------------------------------------------
+    // Logic to add attachments to subsequent pages
+    // ----------------------------------------------------------------------
+    if (!empty($attached_files)) {
+        $file_counter = 1;
+        foreach ($attached_files as $file) {
+            // Check if the file is an image
+            $mime = @mime_content_type($file['real_path']);
+            if (str_starts_with($mime, 'image/') || in_array(pathinfo($file['real_path'], PATHINFO_EXTENSION), ['jpg', 'jpeg', 'png', 'gif'])) {
+                
+                // Add a new page for each attachment
+                $mpdf->AddPage();
+                
+                $attachment_html = '
+                    <div style="text-align: center; margin: 0 auto; font-family: Arial, sans-serif;">
+                        <h3 style="font-size: 14pt;">Attachment ' . $file_counter . ': ' . htmlspecialchars($file['original_file_name']) . '</h3>
+                        <p style="font-size: 10pt; margin-top: -10px;">Request ID: ' . $request_id . '</p>
+                        
+                        <img 
+                            src="' . $file['real_path'] . '" 
+                            style="max-width: 95%; max-height: 60%; display: block; margin: 20px auto; border: 1px solid #ccc; box-sizing: border-box;" 
+                        />
+                    </div>
+                ';
+                
+                $mpdf->WriteHTML($attachment_html);
+                $file_counter++;
+            }
+        }
+    }
+    // ----------------------------------------------------------------------
+
     $filename = "Budget_Request_{$request_id}.pdf";
     if ($cliPdfMode) {
         echo $mpdf->Output($filename, 'S');
@@ -414,5 +495,8 @@ try {
 } catch (MpdfException $e) {
     echo "mPDF Error: " . $e->getMessage();
 }
+
+// Final database connection close
+mysqli_close($link);
 
 ?>
