@@ -42,7 +42,7 @@ $sql_funding = "
         r.final_status, 
         r.notification_status,
         o.org_name,
-        r.type -- âœ… *** FIX 1: Changed 'funding' AS type to r.type ***
+        r.type 
     FROM requests r
     INNER JOIN users u ON r.user_id = u.user_id
     INNER JOIN organizations o ON u.org_id = o.org_id
@@ -108,18 +108,21 @@ if ($stmt = mysqli_prepare($link, $sql_venue)) {
     mysqli_stmt_close($stmt);
 }
 
+// Close link if it was opened
+if (isset($link) && $link instanceof mysqli) {
+   mysqli_close($link);
+}
+
 // --- 3. Convert associative array to regular array and sort by date ---
 $requests = array_values($requests);
 usort($requests, fn($a, $b) => strtotime($b['date_submitted']) - strtotime($a['date_submitted']));
 
 // --- 4. Function to determine final status ---
 function get_final_status($request) {
-    // âœ… Trust DB's final_status first
+    // Trust DB's final_status first
     if (!empty($request['final_status']) && $request['final_status'] !== 'Pending') {
 
-        // âœ… *** FIX 2: LIQUIDATION STATUS FIX ***
-        // If the type is 'Liquidation Report' and status is 'Budget Available',
-        // just show 'Approved'.
+        // LIQUIDATION STATUS FIX 
         if (isset($request['type']) && $request['type'] === 'Liquidation Report' && $request['final_status'] === 'Budget Available') {
             return 'Approved';
         }
@@ -127,7 +130,7 @@ function get_final_status($request) {
         return $request['final_status'];
     }
 
-    // ðŸŸ£ Handle Venue Requests
+    // Handle Venue Requests
     if (isset($request['type']) && $request['type'] === 'venue') {
         $statuses = [
             $request['vp_admin_status'] ?? 'N/A',
@@ -143,14 +146,15 @@ function get_final_status($request) {
 
         // Remove N/A and check all Approved
         $relevant = array_filter($statuses, fn($s) => $s !== 'N/A');
-        if (!empty($relevant) && count(array_filter($relevant, fn($s) => $s === 'Approved')) === count($relevant)) {
+        // If there are relevant statuses, check if all of them are 'Approved'
+        if (!empty($relevant) && count(array_filter($relevant, fn($s) => $s === 'Approved' || $s === 'Venue Approved')) === count($relevant)) {
             return 'Approved';
         }
 
         return 'Pending';
     }
 
-    // ðŸ”µ Handle Funding Requests
+    // Handle Funding Requests
     else {
         $statuses = [
             $request['adviser_status'] ?? 'Pending',
@@ -254,6 +258,8 @@ foreach ($requests as $req) {
                     $type_class .= ' type-chip--venue';
                 } elseif (($request['type'] ?? '') === 'Liquidation Report') {
                     $type_class .= ' type-chip--liquidation';
+                } elseif (($request['type'] ?? '') === 'Budget Request') {
+                    $type_class .= ' type-chip--budgetrequest';
                 } elseif (($request['type'] ?? '') === 'Reimbursement') {
                     $type_class .= ' type-chip--reimbursement';
                 }
@@ -268,7 +274,6 @@ foreach ($requests as $req) {
                 $pipeline_columns = $is_venue ? [
                     'admin_services_status' => 'Admin Services',
                     'cfdo_status' => 'CFDO',
-                    'afo_status' => 'AFO',
                     'vp_acad_status' => 'VP Acad',
                     'vp_admin_status' => 'VP Admin'
                 ] : [
@@ -312,23 +317,29 @@ foreach ($requests as $req) {
                         View details
                     </a>
                 </div>
-                <div class="flex flex-wrap gap-2">
+                
+                <div class="flex flex-wrap gap-2 pt-2 border-t border-slate-100">
                     <?php foreach ($pipeline_columns as $column => $label):
                         $value = $request[$column] ?? 'Pending';
-                        $pill_class = 'flow-pill';
-                        if ($value === 'Approved') {
+                        // Handle 'N/A' statuses in Venue request which should appear as Pending/Waiting if not explicitly approved/rejected
+                        if ($is_venue && $value === 'N/A') {
+                            $value = 'Pending';
+                        }
+
+                        $pill_class = 'flow-pill'; // Default style
+                        if ($value === 'Approved' || $value === 'Venue Approved') {
                             $pill_class .= ' approved';
                         } elseif ($value === 'Rejected') {
                             $pill_class .= ' rejected';
                         }
                     ?>
                         <span class="<?php echo $pill_class; ?>">
-                            <span class="font-semibold tracking-[0.2em] text-[10px]"><?php echo $label; ?></span>
-                            <?php echo htmlspecialchars($value); ?>
+                            <span class="font-semibold tracking-[0.2em] text-[10px] uppercase"><?php echo $label; ?></span>
+                            <span class="text-xs"><?php echo htmlspecialchars($value); ?></span>
                         </span>
                     <?php endforeach; ?>
                 </div>
-            </article>
+                </article>
             <?php endforeach; ?>
         </div>
     <?php endif; ?>
