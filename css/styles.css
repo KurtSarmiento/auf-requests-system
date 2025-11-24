@@ -198,6 +198,44 @@ a:focus {
     gap: 0.6rem;
 }
 
+/* In your css/styles.css */
+
+/* 1. Ensure the parent link can position the bubble */
+.nav-link--notif {
+    position: relative; /* Allows notification-bubble to be positioned absolutely relative to this link */
+    padding-right: 25px; /* Add extra padding on the right for the bubble */
+}
+
+/* 2. Style the Notification Bubble */
+.notification-bubble {
+    /* Position */
+    position: absolute;
+    top: -5px; /* Adjust vertical position */
+    right: 0; /* Adjust horizontal position */
+    
+    /* Shape and Content */
+    min-width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 5px;
+    border-radius: 9999px; /* Fully rounded/pill shape */
+    
+    /* Text */
+    color: white; /* White text */
+    font-size: 0.7rem;
+    font-weight: 700;
+    line-height: 1;
+    
+    /* Glassy Gradient Background (Tailwind-like colors) */
+    background: linear-gradient(135deg, 
+        rgba(59, 130, 246, 0.95), /* Blue-500 start */
+        rgba(147, 197, 253, 0.7)); /* Blue-300 end with transparency for soft glass */
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15), 
+                0 0 0 1px rgba(255, 255, 255, 0.5) inset; /* Soft shadow and white inner border for glass effect */
+}
+
 .nav-link {
     color: rgba(26, 34, 63, 0.8);
     padding: 0.45rem 1.1rem;
@@ -207,6 +245,7 @@ a:focus {
     letter-spacing: 0.28em;
     text-transform: uppercase;
     border: 1px solid transparent;
+    text-align: center;
     transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 }
 

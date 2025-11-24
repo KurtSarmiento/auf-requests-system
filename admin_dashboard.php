@@ -259,7 +259,7 @@ if (isset($link) && $link instanceof mysqli) { // Check if link is valid before 
 }
 
 // Start the page using the template function
-start_page("Admin Dashboard", $role, $full_name);
+start_page("Admin Dashboard", $role, $full_name, $pending_count);
 ?>
 
 <div class="space-y-10">
