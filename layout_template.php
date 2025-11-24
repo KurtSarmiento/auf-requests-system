@@ -17,7 +17,9 @@ function start_page($title, $role, $full_name) {
     <nav class="nav-glass">
         <div class="nav-inner">
             <div class="nav-brand">
-                <div class="nav-logo">AUF</div>
+                <div class="nav-logo">
+                    <img src="pics/aufthorize.png" alt="AUFthorize Logo" class="h-8 w-auto">
+                </div>
                 <div>
                     <strong>AUFthorize</strong>
                     <span>Requests OS</span>
