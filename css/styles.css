@@ -728,22 +728,30 @@ a:focus {
 }
 
 .type-chip--venue {
-    background: rgba(186, 174, 255, 0.25);
-    border-color: rgba(186, 174, 255, 0.45);
-    color: #3c2f7a;
+    background: rgba(186, 174, 255, 0.25); /* Light Lavender/Purple */
+    border-color: rgba(186, 174, 255, 0.6);
+    color: #3c2f7a; /* Dark Indigo */
 }
 
 .type-chip--liquidation {
-    background: rgba(162, 246, 214, 0.25);
-    border-color: rgba(162, 246, 214, 0.45);
-    color: #065f46;
+    background: rgba(162, 246, 214, 0.25); /* Light Mint */
+    border-color: rgba(162, 246, 214, 0.6);
+    color: #065f46; /* Dark Green */
 }
 
 .type-chip--reimbursement {
-    background: rgba(255, 226, 183, 0.25);
-    border-color: rgba(255, 226, 183, 0.5);
-    color: #92400e;
+    background: rgba(255, 226, 183, 0.25); /* Light Peach */
+    border-color: rgba(255, 226, 183, 0.6);
+    color: #92400e; /* Dark Orange */
 }
+
+.type-chip--budgetrequest{
+    /* Assuming this is the default 'Funding Request' type */
+    background: rgba(144, 202, 249, 0.25); /* Light Blue */
+    border-color: rgba(144, 202, 249, 0.6);
+    color: #1e40af; /* Dark Blue */
+}
+
 
 .flow-pill {
     display: inline-flex;
