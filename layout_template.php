@@ -1,6 +1,6 @@
 <?php
 // Function to start the HTML structure, includes header and navigation.
-function start_page($title, $role, $full_name) {
+function start_page($title, $role, $full_name, $review_queue_count = 0) {
     $current_page = basename($_SERVER["PHP_SELF"] ?? '');
     ?>
 <!DOCTYPE html>
@@ -17,7 +17,9 @@ function start_page($title, $role, $full_name) {
     <nav class="nav-glass">
         <div class="nav-inner">
             <div class="nav-brand">
-                <div class="nav-logo">AUF</div>
+                <div class="nav-logo">
+                    <img src="pics/aufthorize.png" alt="AUFthorize Logo" class="h-8 w-auto">
+                </div>
                 <div>
                     <strong>AUFthorize</strong>
                     <span>Requests OS</span>
@@ -30,7 +32,12 @@ function start_page($title, $role, $full_name) {
                     <a href="request_list.php" class="nav-link <?php echo ($current_page === 'request_list.php') ? 'is-active' : ''; ?>">My Submissions</a>
                 <?php else: ?>
                     <a href="admin_dashboard.php" class="nav-link <?php echo ($current_page === 'admin_dashboard.php') ? 'is-active' : ''; ?>">Admin Dashboard</a>
-                    <a href="admin_request_list.php" class="nav-link <?php echo ($current_page === 'admin_request_list.php') ? 'is-active' : ''; ?>">Review Queue</a>
+                    <a href="admin_request_list.php" class="nav-link nav-link--notif <?php echo ($current_page === 'admin_request_list.php') ? 'is-active' : ''; ?>">
+                        Review Queue
+                        <?php if ($review_queue_count > 0): ?>
+                            <span class="notification-bubble"><?php echo $review_queue_count; ?></span>
+                        <?php endif; ?>
+                    </a>
                     <a href="admin_history_list.php" class="nav-link <?php echo ($current_page === 'admin_history_list.php') ? 'is-active' : ''; ?>">History</a>
                 <?php endif; ?>
             </div>

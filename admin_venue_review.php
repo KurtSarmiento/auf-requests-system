@@ -291,7 +291,7 @@ start_page("Review Venue Request", $current_role, $_SESSION["full_name"]);
         <div class="lg:col-span-2 space-y-6">
             
             <div class="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
-                <span class="text-sm font-semibold text-purple-600 bg-purple-50 px-3 py-1 rounded-full">Venue Request</span>
+                <span class="type-chip type-chip--venue">Venue Request</span>
                 <h1 class="text-4xl font-extrabold text-gray-900 mt-2 mb-1"><?php echo htmlspecialchars($request['title']); ?></h1>
                 <p class="text-lg text-gray-600">
                     Activity Title

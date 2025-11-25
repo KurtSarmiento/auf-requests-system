@@ -46,6 +46,7 @@ if ($role === 'Officer' && !$cliPdfMode) {
 
 $stmt = mysqli_prepare($link, $sql);
 if (!$stmt) {
+    // Note: mysqli_error is often sensitive, use generic message in production
     die("Error preparing statement: " . mysqli_error($link));
 }
 mysqli_stmt_bind_param($stmt, $types, ...$params);
@@ -53,11 +54,53 @@ mysqli_stmt_execute($stmt);
 $result = mysqli_stmt_get_result($stmt);
 $request = mysqli_fetch_assoc($result);
 mysqli_stmt_close($stmt);
-mysqli_close($link);
 
+// NOTE: mysqli_close($link) is moved to AFTER the main logic (below)
 if (!$request) {
+    mysqli_close($link); // Close connection before dying
     die("Reimbursement Request not found or you don't have permission to view it.");
 }
+
+// ----------------------------------------------------------------------
+// ✅ NEW: Fetch Attached Files
+// ----------------------------------------------------------------------
+$attached_files = [];
+$files_sql = "
+    SELECT file_path, file_name, original_file_name
+    FROM files
+    WHERE request_id = ?
+";
+$files_stmt = mysqli_prepare($link, $files_sql);
+if ($files_stmt) {
+    mysqli_stmt_bind_param($files_stmt, "i", $request_id);
+    mysqli_stmt_execute($files_stmt);
+    $files_result = mysqli_stmt_get_result($files_stmt);
+
+    while ($file = mysqli_fetch_assoc($files_result)) {
+        // Resolve actual path: prefer stored file_path, fallback to uploads/<file_name>
+        $real_path = null;
+        $paths_to_try = [];
+        if (!empty($file['file_path'])) $paths_to_try[] = $file['file_path'];
+        // Assuming 'uploads' folder is in the same directory as this script
+        if (!empty($file['file_name'])) $paths_to_try[] = __DIR__ . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . $file['file_name'];
+
+        foreach ($paths_to_try as $p) {
+            // Use the local file path structure for Mpdf to access it
+            if (file_exists($p) && is_readable($p)) {
+                $real_path = $p;
+                break;
+            }
+        }
+
+        if ($real_path) {
+            $file['real_path'] = $real_path;
+            $attached_files[] = $file;
+        }
+    }
+    mysqli_stmt_close($files_stmt);
+}
+// ----------------------------------------------------------------------
+
 
 /**
  * Build signature block data similar to other request PDFs.
@@ -139,6 +182,7 @@ if (!empty($budget_items)) {
     }
 }
 
+// Fallback logic for total expenses if budget_details_json was empty but 'amount' field has data
 if ($total_expenses <= 0 && isset($request['amount'])) {
     $total_expenses = (float)str_replace(',', '', (string)$request['amount']);
 }
@@ -151,7 +195,7 @@ $activity_date = !empty($request['activity_date']) ? date('M d, Y', strtotime($r
 $date_submitted = !empty($request['date_submitted']) ? date('M d, Y', strtotime($request['date_submitted'])) : 'N/A';
 $original_title = !empty($request['original_title']) ? htmlspecialchars($request['original_title']) : 'N/A';
 $original_amount = (float)str_replace(',', '', (string)($request['original_amount'] ?? 0));
-$reim_amount = (float)str_replace(',', '', (string)($request['amount'] ?? 0));
+$reim_amount = (float)str_replace(',', '', (string)($request['amount'] ?? 0)); // This is the requested reimbursement amount
 $original_amount_display = number_format($original_amount, 2);
 $reim_amount_display = number_format($reim_amount, 2);
 $total_expenses_display = number_format($total_expenses, 2);
@@ -215,6 +259,7 @@ $html = '
         <div class="right-col" style="width: 40%;">
             Date Filed: <span class="line" style="min-width: 150px;">' . htmlspecialchars($date_submitted) . '</span>
         </div>
+        <div style="clear: both;"></div>
     </div>
 
     <div class="field-row two-cols">
@@ -224,6 +269,7 @@ $html = '
         <div class="right-col" style="width: 40%;">
             Date of Activity: <span class="line" style="min-width: 150px;">' . htmlspecialchars($activity_date) . '</span>
         </div>
+        <div style="clear: both;"></div>
     </div>
 
     <div class="field-row two-cols">
@@ -233,6 +279,7 @@ $html = '
         <div class="right-col" style="width: 40%;">
             Approved Budget Amount: <span class="line" style="min-width: 150px;">&#8369; ' . $original_amount_display . '</span>
         </div>
+        <div style="clear: both;"></div>
     </div>
 
     <div class="field-row two-cols">
@@ -242,6 +289,7 @@ $html = '
         <div class="right-col" style="width: 40%;">
             Reimbursement Amount Requested: <span class="line" style="min-width: 150px;">&#8369; ' . $reim_amount_display . '</span>
         </div>
+        <div style="clear: both;"></div>
     </div>
 
     <div class="field-row">
@@ -352,14 +400,49 @@ try {
     $mpdf->SetTitle("Reimbursement Request #{$request_id}");
     $mpdf->WriteHTML($html);
 
+    // ----------------------------------------------------------------------
+    // Logic to add attachments to subsequent pages
+    // ----------------------------------------------------------------------
+    if (!empty($attached_files)) {
+        $file_counter = 1;
+        foreach ($attached_files as $file) {
+            // Check if the file is an image using mime type (requires fileinfo extension) or extension
+            $mime = @mime_content_type($file['real_path']);
+            $is_image = str_starts_with($mime, 'image/') || in_array(strtolower(pathinfo($file['real_path'], PATHINFO_EXTENSION)), ['jpg', 'jpeg', 'png', 'gif']);
+            
+            if ($is_image) {
+                
+                // Add a new page for each image attachment
+                $mpdf->AddPage();
+                
+                $attachment_html = '
+                    <div style="text-align: center; margin: 0 auto; font-family: Arial, sans-serif; padding-top: 10px;">
+                        <h3 style="font-size: 14pt;">Attachment ' . $file_counter . ': ' . htmlspecialchars($file['original_file_name']) . '</h3>
+                        <p style="font-size: 10pt; margin-top: -10px;">Reimbursement Request ID: ' . $request_id . '</p>
+                        
+                        <img 
+                            src="' . $file['real_path'] . '" 
+                            style="max-width: 100%; max-height: 90vh; display: block; margin: 15px auto; border: 1px solid #ccc; box-sizing: border-box;" 
+                        />
+                    </div>
+                ';
+                
+                $mpdf->WriteHTML($attachment_html);
+                $file_counter++;
+            }
+        }
+    }
+    // ----------------------------------------------------------------------
+
+
     $filename = "Reimbursement_Request_{$request_id}.pdf";
-    if ($cliPdfMode) {
-        echo $mpdf->Output($filename, 'S');
+
+    if (defined('AUF_PDF_CLI_MODE') && AUF_PDF_CLI_MODE === true) {
+        echo $mpdf->Output($filename, 'S'); // Return binary string when included
     } else {
-        $mpdf->Output($filename, 'I');
+        $mpdf->Output($filename, 'I');      // Show in browser when accessed directly
     }
 } catch (MpdfException $e) {
     echo "mPDF Error: " . $e->getMessage();
 }
-
 ?>

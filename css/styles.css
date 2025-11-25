@@ -688,24 +688,6 @@ a:focus {
     background: rgba(255, 255, 255, 0.18);
 }
 
-.type-chip--venue {
-    background: rgba(186, 174, 255, 0.25);
-    border-color: rgba(186, 174, 255, 0.45);
-    color: #3c2f7a;
-}
-
-.type-chip--liquidation {
-    background: rgba(162, 246, 214, 0.25);
-    border-color: rgba(162, 246, 214, 0.45);
-    color: #065f46;
-}
-
-.type-chip--reimbursement {
-    background: rgba(255, 226, 183, 0.25);
-    border-color: rgba(255, 226, 183, 0.5);
-    color: #92400e;
-}
-
 .flow-pill {
     display: inline-flex;
     align-items: center;
