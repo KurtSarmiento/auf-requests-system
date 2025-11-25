@@ -1,5 +1,7 @@
 <?php
-session_start();
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 $cliPdfMode = defined('AUF_PDF_CLI_MODE') && AUF_PDF_CLI_MODE === true;
 require_once __DIR__ . '/vendor/autoload.php'; // Path to mPDF's autoloader
 require_once "db_config.php"; // Database connection setup (assuming $link is available)
@@ -13,8 +15,8 @@ if (!$cliPdfMode && (!isset($_SESSION["loggedin"]) || $_SESSION["loggedin"] !== 
     exit;
 }
 
-$user_id = $_SESSION["user_id"];
-$role = $_SESSION["role"];
+$user_id = $_SESSION["user_id"] ?? 0;
+$role = $_SESSION["role"] ?? '';
 $liquidation_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 
 if ($liquidation_id === 0) {
