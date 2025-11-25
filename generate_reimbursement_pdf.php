@@ -1,5 +1,7 @@
 <?php
-session_start();
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 $cliPdfMode = defined('AUF_PDF_CLI_MODE') && AUF_PDF_CLI_MODE === true;
 require_once __DIR__ . '/vendor/autoload.php';
 require_once "db_config.php";
@@ -62,7 +64,7 @@ if (!$request) {
 }
 
 // ----------------------------------------------------------------------
-// ✅ NEW: Fetch Attached Files
+// âœ… NEW: Fetch Attached Files
 // ----------------------------------------------------------------------
 $attached_files = [];
 $files_sql = "
