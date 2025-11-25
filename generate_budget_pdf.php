@@ -1,5 +1,6 @@
 <?php
 session_start();
+define('PDF_GENERATED', true);
 $cliPdfMode = defined('AUF_PDF_CLI_MODE') && AUF_PDF_CLI_MODE === true;
 require_once __DIR__ . '/vendor/autoload.php'; // Path to mPDF's autoloader
 require_once "db_config.php"; // Database connection setup (assuming $link is available)
@@ -495,8 +496,8 @@ try {
 } catch (MpdfException $e) {
     echo "mPDF Error: " . $e->getMessage();
 }
-
-// Final database connection close
-mysqli_close($link);
-
+if (!defined('PDF_INCLUDED')) {
+    // Only exit if accessed directly
+    exit;
+}
 ?>
