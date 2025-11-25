@@ -443,17 +443,17 @@ try {
 
 
     $filename = "Liquidation_Report_{$liquidation_id}.pdf";
-    if ($cliPdfMode) {
+
+    if (defined('AUF_PDF_CLI_MODE') && AUF_PDF_CLI_MODE === true) {
+        // When included from email → return as string
         echo $mpdf->Output($filename, 'S');
     } else {
+        // When accessed directly in browser → show/download
         $mpdf->Output($filename, 'I');
     }
     
 } catch (MpdfException $e) {
     echo "mPDF Error: " . $e->getMessage();
 }
-
-// Final database connection close
-mysqli_close($link);
 
 ?>

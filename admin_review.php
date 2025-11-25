@@ -280,9 +280,17 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
                         ];
 
                         $attachments = [];
-                        $pdfAttachment = generateFundingPdfAttachment($link, $request_id);
-                        if ($pdfAttachment) {
-                            $attachments[] = $pdfAttachment;
+                        // Generate correct PDF based on request type
+                        if ($request_type_for_post === 'Liquidation Report') {
+                            $pdfAttachment = generateLiquidationPdfAttachment($link, $request_id);
+                            if ($pdfAttachment) {
+                                $attachments[] = $pdfAttachment;
+                            }
+                        } else {
+                            $pdfAttachment = generateFundingPdfAttachment($link, $request_id);
+                            if ($pdfAttachment) {
+                                $attachments[] = $pdfAttachment;
+                            }
                         }
 
                         if ($request_type_for_post === 'Liquidation Report') {
@@ -301,7 +309,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
                         $body = buildEmailTemplate($greeting, $message, $details);
                         sendNotificationEmail($officerDetails['email'], $subject, $body, $attachments);
 
-                        cleanupGeneratedPdf($pdfAttachment);
+                        if (isset($pdfAttachment)) {
+                            cleanupGeneratedPdf($pdfAttachment);
+                        }
                     }
                 }
                 // ✅ *** END: AFO Approval Email Logic ***
