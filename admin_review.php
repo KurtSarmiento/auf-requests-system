@@ -32,6 +32,22 @@ if (!function_exists('get_status_class')) {
     }
 }
 
+// --- NEW Helper for CSS colors (Request Type Chip)
+if (!function_exists('get_request_type_custom_class')) {
+    function get_request_type_custom_class($type) {
+        // Map request types to your existing custom CSS classes
+        switch ($type) {
+            case 'Venue Request': return 'type-chip--venue';
+            case 'Reimbursement': return 'type-chip--reimbursement';
+            case 'Liquidation Report': return 'type-chip--liquidation';
+            case 'Budget Request': return 'type-chip--budgetrequest';
+            // Default to 'Funding Request' or general chip style
+            case 'Funding Request': return 'type-chip--budgetrequest';
+            default: return ''; // or 'type-chip--budgetrequest' if you want a default
+        }
+    }
+}
+
 // --- Variables
 $request_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 $error_message = $success_message = $remark = "";
@@ -264,8 +280,21 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
                         ];
 
                         $attachments = [];
-                        $pdfAttachment = generateFundingPdfAttachment($link, $request_id);
+
+                        // Smart PDF generation based on request type
+                        if ($request_type_for_post === 'Liquidation Report') {
+                            $pdfAttachment = generateLiquidationPdfAttachment($link, $request_id);
+                            $pdfName = "Liquidation_Report_{$request_id}_Approved.pdf";
+                        } elseif ($request_type_for_post === 'Reimbursement') {
+                            $pdfAttachment = generateReimbursementPdfAttachment($link, $request_id);
+                            $pdfName = "Reimbursement_Request_{$request_id}_Approved.pdf";
+                        } else {
+                            $pdfAttachment = generateFundingPdfAttachment($link, $request_id);
+                            $pdfName = "Budget_Request_{$request_id}_Approved.pdf";
+                        }
+
                         if ($pdfAttachment) {
+                            $pdfAttachment['name'] = $pdfName; // override name for clarity
                             $attachments[] = $pdfAttachment;
                         }
 
@@ -285,7 +314,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
                         $body = buildEmailTemplate($greeting, $message, $details);
                         sendNotificationEmail($officerDetails['email'], $subject, $body, $attachments);
 
-                        cleanupGeneratedPdf($pdfAttachment);
+                        if (isset($pdfAttachment)) {
+                            cleanupGeneratedPdf($pdfAttachment);
+                        }
                     }
                 }
                 // ✅ *** END: AFO Approval Email Logic ***
@@ -435,7 +466,9 @@ start_page("Review Funding Request", $current_role, $_SESSION["full_name"]);
         <div class="lg:col-span-2 space-y-6">
             
             <div class="bg-white p-6 rounded-xl shadow-lg border border-gray-200">
-                <span class="text-sm font-semibold text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full"><?php echo htmlspecialchars($request['type']); ?> Request</span>
+                <span class="type-chip <?php echo get_request_type_custom_class($request['type'] ?? ''); ?>">
+                    <?php echo htmlspecialchars($request['type']); ?>
+                </span>
                 <h1 class="text-4xl font-extrabold text-gray-900 mt-2 mb-1"><?php echo htmlspecialchars($request['title']); ?></h1>
                 <p class="text-lg text-gray-600">
                     Submitted by <span class="font-semibold"><?php echo htmlspecialchars($request['full_name']); ?></span> 

@@ -134,7 +134,7 @@ if($_SERVER["REQUEST_METHOD"] == "POST"){
                 <div class="flex flex-col items-center text-center gap-4">
                     <!-- Logo placeholder block. Replace with the actual AUFthorize branding when available. -->
                     <div class="logo-placeholder" role="img" aria-label="AUFthorize logo placeholder">
-                        <span>AUF</span>
+                        <span><img src="pics/aufthorize.png" alt="AUFthorize Logo" class="h-20 w-auto"></span>
                     </div>
                     <div>
                         <p class="logo-caption mb-2">AUFthorize</p>

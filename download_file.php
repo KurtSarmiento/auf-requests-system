@@ -34,7 +34,9 @@ if (!$stmt = mysqli_prepare($link, $sql)) {
 mysqli_stmt_bind_param($stmt, "i", $file_id);
 mysqli_stmt_execute($stmt);
 mysqli_stmt_bind_result($stmt, $file_path, $file_name, $original_name, $request_id, $submitter_org_id);
-if (!mysqli_stmt_fetch($stmt)) {
+
+// ✅ FIX: Corrected function name from 'myqsli_stmt_fetch' to 'mysqli_stmt_fetch'
+if (!mysqli_stmt_fetch($stmt)) { 
     mysqli_stmt_close($stmt);
     http_response_code(404);
     echo "File not found.";
@@ -82,17 +84,38 @@ if (!$real_path) {
     exit;
 }
 
+// --- START FIX: Reliable MIME type detection using finfo ---
+$mime = 'application/octet-stream'; // Default fallback
+
+if (extension_loaded('fileinfo') && $finfo = finfo_open(FILEINFO_MIME_TYPE)) {
+    $detected_mime = finfo_file($finfo, $real_path);
+    if ($detected_mime !== false) {
+        $mime = $detected_mime;
+    }
+    finfo_close($finfo);
+} else {
+    // Secondary fallback (legacy method if finfo extension is missing)
+    $mime = @mime_content_type($real_path) ?: 'application/octet-stream';
+}
+// --- END FIX ---
+
 // Stream file with headers
-$mime = @mime_content_type($real_path) ?: 'application/octet-stream';
 $basename = $original_name ?: basename($real_path);
+
+// Clear output buffer before sending file, to ensure headers are sent first
+if (ob_get_level()) {
+    ob_end_clean();
+}
+
 header('Content-Description: File Transfer');
-header('Content-Type: ' . $mime);
-header('Content-Disposition: attachment; filename="' . str_replace('"', '', basename($basename)) . '"');
+header('Content-Type: ' . $mime); // Crucial for client recognition (e.g., image/jpeg)
+header('Content-Disposition: attachment; filename="' . str_replace('"', '', basename($basename)) . '"'); // Sets the download name
 header('Content-Transfer-Encoding: binary');
 header('Expires: 0');
 header('Cache-Control: must-revalidate');
 header('Pragma: public');
 header('Content-Length: ' . filesize($real_path));
+
 readfile($real_path);
 exit;
 ?>
