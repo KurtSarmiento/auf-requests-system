@@ -1,5 +1,7 @@
 <?php
-session_start();
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 define('PDF_GENERATED', true);
 $cliPdfMode = defined('AUF_PDF_CLI_MODE') && AUF_PDF_CLI_MODE === true;
 require_once __DIR__ . '/vendor/autoload.php'; // Path to mPDF's autoloader
@@ -14,13 +16,18 @@ if (!$cliPdfMode && (!isset($_SESSION["loggedin"]) || $_SESSION["loggedin"] !== 
     exit;
 }
 
-$user_id = $_SESSION["user_id"];
-$role = $_SESSION["role"];
+$user_id = $_SESSION["user_id"] ?? 0;
+$role = $_SESSION["role"] ?? '';
 $request_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 
 if ($request_id === 0) {
     die("Invalid request ID.");
 }
+
+$alternate_generators = [
+    'liquidation report' => __DIR__ . '/generate_liquidation_pdf.php',
+    'reimbursement' => __DIR__ . '/generate_reimbursement_pdf.php',
+];
 
 // --- Fetch Request Data ---
 $sql = "SELECT 
@@ -32,7 +39,7 @@ $sql = "SELECT
         FROM requests r
         INNER JOIN users u ON r.user_id = u.user_id
         INNER JOIN organizations o ON u.org_id = o.org_id
-        WHERE r.request_id = ? AND r.type = 'Budget Request'";
+        WHERE r.request_id = ?";
 
 $params = [$request_id];
 $types = "i";
