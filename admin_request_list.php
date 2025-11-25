@@ -1,4 +1,4 @@
-﻿<?php
+<?php
 // Initialize the session tite puke
 session_start(); // âœ… Required to track logged-in user
 
@@ -266,6 +266,7 @@ if (isset($link) && $link instanceof mysqli) {
 }
 
 $queue_total = is_array($requests) ? count($requests) : 0;
+$_SESSION['review_queue_count'] = max(0, (int)$queue_total);
 $funding_total = 0;
 $venue_total = 0;
 $oldest_submission = null;
@@ -285,7 +286,7 @@ if (!empty($requests)) {
 }
 ?>
 
-<?php start_page("Admin Review Queue", $current_role, $_SESSION["full_name"]); ?>
+<?php start_page("Admin Review Queue", $current_role, $_SESSION["full_name"], $queue_total); ?>
 <div class="space-y-8 py-4">
     <section class="page-hero">
         <div class="grid gap-6 lg:grid-cols-2 lg:items-center">
@@ -299,13 +300,6 @@ if (!empty($requests)) {
                     <?php endif; ?>
                 </div>
             </div>
-            <div class="subtle-card space-y-2">
-                <p class="text-xs uppercase tracking-[0.4em] text-slate-500">Routing</p>
-                <p class="text-sm text-slate-600">
-                    Only items cleared by required offices reach you. Filters respect organization links where applicable.
-                </p>
-            </div>
-        </div>
     </section>
 
     <div class="stat-grid">
@@ -423,6 +417,3 @@ if (!empty($requests)) {
     <?php endif; ?>
 </div>
 <?php end_page(); ?><?php end_page(); ?>
-
-
-
