@@ -424,7 +424,7 @@ try {
                         
                         <img 
                             src="' . $file['real_path'] . '" 
-                            style="max-width: 100%; max-height: 90vh; display: block; margin: 15px auto; border: 1px solid #ccc; box-sizing: border-box;" 
+                            style="max-width: 95%; max-height: 60%; display: block; margin: 15px auto; border: 1px solid #ccc; box-sizing: border-box;" 
                         />
                     </div>
                 ';
