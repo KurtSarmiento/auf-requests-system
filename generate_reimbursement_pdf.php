@@ -436,16 +436,13 @@ try {
 
 
     $filename = "Reimbursement_Request_{$request_id}.pdf";
-    if ($cliPdfMode) {
-        echo $mpdf->Output($filename, 'S');
+
+    if (defined('AUF_PDF_CLI_MODE') && AUF_PDF_CLI_MODE === true) {
+        echo $mpdf->Output($filename, 'S'); // Return binary string when included
     } else {
-        $mpdf->Output($filename, 'I');
+        $mpdf->Output($filename, 'I');      // Show in browser when accessed directly
     }
 } catch (MpdfException $e) {
     echo "mPDF Error: " . $e->getMessage();
 }
-
-// Final database connection close (after all logic, including error checks)
-mysqli_close($link);
-
 ?>

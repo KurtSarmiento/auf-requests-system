@@ -280,17 +280,22 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && $request_id > 0) {
                         ];
 
                         $attachments = [];
-                        // Generate correct PDF based on request type
+
+                        // Smart PDF generation based on request type
                         if ($request_type_for_post === 'Liquidation Report') {
                             $pdfAttachment = generateLiquidationPdfAttachment($link, $request_id);
-                            if ($pdfAttachment) {
-                                $attachments[] = $pdfAttachment;
-                            }
+                            $pdfName = "Liquidation_Report_{$request_id}_Approved.pdf";
+                        } elseif ($request_type_for_post === 'Reimbursement') {
+                            $pdfAttachment = generateReimbursementPdfAttachment($link, $request_id);
+                            $pdfName = "Reimbursement_Request_{$request_id}_Approved.pdf";
                         } else {
                             $pdfAttachment = generateFundingPdfAttachment($link, $request_id);
-                            if ($pdfAttachment) {
-                                $attachments[] = $pdfAttachment;
-                            }
+                            $pdfName = "Budget_Request_{$request_id}_Approved.pdf";
+                        }
+
+                        if ($pdfAttachment) {
+                            $pdfAttachment['name'] = $pdfName; // override name for clarity
+                            $attachments[] = $pdfAttachment;
                         }
 
                         if ($request_type_for_post === 'Liquidation Report') {
