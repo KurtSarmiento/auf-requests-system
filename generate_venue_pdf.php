@@ -1,4 +1,7 @@
 <?php
+if (!defined('AUF_PDF_CLI_MODE')) {
+    define('AUF_PDF_CLI_MODE', false);
+}
 session_start();
 require_once __DIR__ . '/vendor/autoload.php'; // Path to mPDF's autoloader
 require_once "db_config.php"; // Database connection setup (assuming $link is available)
@@ -47,7 +50,6 @@ mysqli_stmt_execute($stmt);
 $result = mysqli_stmt_get_result($stmt);
 $request = mysqli_fetch_assoc($result);
 mysqli_stmt_close($stmt);
-mysqli_close($link);
 
 if (!$request) {
     die("Request not found or you don't have permission to view it.");
@@ -425,7 +427,11 @@ try {
     
     // Output the PDF in the browser
     $filename = "Venue_Request_{$request_id}.pdf";
-    $mpdf->Output($filename, 'I'); // 'I' is for inline/browser view
+    if (defined('AUF_PDF_CLI_MODE') && AUF_PDF_CLI_MODE === true) {
+        echo $mpdf->Output($filename, 'S'); // Return as string
+    } else {
+        $mpdf->Output($filename, 'I');      // Show in browser
+    }
     
 } catch (MpdfException $e) {
     echo $e->getMessage();
